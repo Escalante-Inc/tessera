@@ -8,34 +8,6 @@ import QuickLMDB
 import nostr_kit_swift
 
 extension TesseraDB {
-	
-	/// Returns the user information for the specified `PublicKey`
-	public func queryUser(publicKey:PublicKey) throws -> User {
-		let newTrans = try Transaction(env:env, readOnly:true)
-		return try users.loadEntry(key: publicKey, tx: newTrans)
-	}
-	
-	/// Returns the first user found with a matching username.
-	public func queryUser(username:String) throws -> User? {
-		let newTrans = try Transaction(env:env, readOnly:true)
-		do {
-			return try users.cursor(tx:newTrans) { cursor in				
-				let (_, val) = try cursor.opFirst()
-				if String(val.userName) == username {
-					return val
-				}
-				while let (_, val) = try? cursor.opNext() {
-					if String(val.userName) == username {
-						return val
-					}
-				}
-				return nil
-			}
-		} catch {
-			return nil
-		}
-	}
-	
 	/// Returns the nostr event for the specified `NOSTR_id`
 	public func queryEventID(_ id: NOSTR_id) throws -> StoredSignedEvent {
 		let newTrans = try Transaction(env:env, readOnly:true)
@@ -45,6 +17,9 @@ extension TesseraDB {
 	/// Filters out all events from the database that match the given filters.
 	/// Follows the NOSTR protocol where the filters use an OR function and each filter's fields use an AND function.
 	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
+	///
+	/// Uses a 'dumb' filter. Ignores deletions or updates on events.
+	/// Time complexity: O(n) where n is the number of signed events.
 	public func queryEventsByFilter(filter:[Filter]) throws -> [StoredSignedEvent] {
 		var filteredEvents:[StoredSignedEvent] = []
 		// Filters are OR'd and filter fields are AND'ed
@@ -53,15 +28,11 @@ extension TesseraDB {
 			try signedEvents.cursor(tx:newTrans) { cursor in
 				let (_, val) = try cursor.opFirst()
 				if eventMatchesFilters(val.event, filters: filter, logLevel: log.logLevel) {
-					if (!val.metadata.tombstone.bool) {
-						filteredEvents.append(val)
-					}
+					filteredEvents.append(val)
 				}
 				while let (_, val) = try? cursor.opNext() {
 					if eventMatchesFilters(val.event, filters: filter, logLevel: log.logLevel) {
-						if (!val.metadata.tombstone.bool) {
-							filteredEvents.append(val)
-						}
+						filteredEvents.append(val)
 					}
 				}
 			}

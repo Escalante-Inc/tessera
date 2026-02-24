@@ -69,9 +69,12 @@ extension TesseraTests {
 			try tesseraDB.scribeNewEvent(signedEvent: StoredSignedEvent(event: bobSignedEvent, metadata: SignedEventMetadata(tombstone: false, receivedFromRelay: "bob")), logLevel: .trace)
 			try tesseraDB.scribeNewEvent(signedEvent: StoredSignedEvent(event: adminSignedEvent, metadata: SignedEventMetadata(tombstone: false, receivedFromRelay: "admin")), logLevel: .trace)
 			
-			try tesseraDB.scribeNewUser(user: User(privateKey: alicePrivateKey, userName: "Alice"), logLevel: .trace)
-			try tesseraDB.scribeNewUser(user: User(privateKey: bobPrivateKey, userName: "Bob"), logLevel: .trace)
-			try tesseraDB.scribeNewUser(user: User(privateKey: adminPrivateKey, userName: "Admin"), logLevel: .trace)
+			let aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(accessLevel: 3)], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
+			let bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(accessLevel: 3)], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
+			let adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [EventTag(accessLevel: 7)], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
+			try tesseraDB.scribeNewEvent(signedEvent: StoredSignedEvent(event: aliceProfileEvent, metadata: SignedEventMetadata(tombstone: false, receivedFromRelay: "alice")), logLevel: .trace)
+			try tesseraDB.scribeNewEvent(signedEvent: StoredSignedEvent(event: bobProfileEvent, metadata: SignedEventMetadata(tombstone: false, receivedFromRelay: "bob")), logLevel: .trace)
+			try tesseraDB.scribeNewEvent(signedEvent: StoredSignedEvent(event: adminProfileEvent, metadata: SignedEventMetadata(tombstone: false, receivedFromRelay: "admin")), logLevel: .trace)
 		}
 		
 		deinit {
@@ -140,25 +143,9 @@ extension TesseraTests {
 			#expect(events.count == 1)
 		}
 		
-		@Test func testForceUpdateUser() throws {
-			tesseraDB.forceUpdateUser(publicEd25519Key: aliceEd25519PublicKey, username: "New Alice")
-			let alice = try tesseraDB.queryUser(publicKey: aliceEd25519PublicKey)
-			#expect(alice.userName == "New Alice")
-		}
-		
-		@Test func testForceDeleteUserByPK() {
-			tesseraDB.forceDeleteUser(publicKey: aliceEd25519PublicKey)
-			#expect(tesseraDB.userCount == 2)
-		}
-		
-		@Test func testForceDeleteUserByUsername() {
-			tesseraDB.forceDeleteUser(username: "Alice")
-			#expect(tesseraDB.userCount == 2)
-		}
-		
 		@Test func forceDeleteEvent() {
 			tesseraDB.forceDeleteEvent(id: aliceSignedEvent.unsignedEvent.id)
-			#expect(tesseraDB.eventCount == 2)
+			#expect(tesseraDB.eventCount == 5)
 		}
 		
 		@Test func forceDeleteEventFiltered() {

@@ -6,6 +6,33 @@ import RAW_ed25519
 import NIO
 import nostr_kit_swift
 
+public func applyTesseraFilter<Content:NOSTR_event_content>(_ event: NOSTR_event_signed<UnsignedEvent<Content>>, filter: Filter) -> Bool {
+	var hasTags: Bool = true
+	tagLoop: for tag in filter.tags {
+		for eventTag in event.unsignedEvent.tags.array {
+			guard tag.NOSTR_tag_index_field == eventTag.NOSTR_tag_index_field else {
+				continue
+			}
+			// At least one value from the event must appear in the filter values
+			if tag.NOSTR_tag_values.array.contains(where: { tagValue in
+				tagValue.isEqual(to: eventTag.NOSTR_tag_values.array[0])
+			}) {
+				continue tagLoop
+			}
+		}
+		hasTags = false
+	}
+	if((filter.ids == [] || filter.ids.contains(event.unsignedEvent.id)) &&
+	   (filter.authors == [] || filter.authors.contains(event.unsignedEvent.publicKey) || filter.authors.contains(author(ofEvent: event))) &&
+	   (filter.kinds == [] || filter.kinds.contains(event.unsignedEvent.kind)) &&
+	   (filter.since == nil || filter.since! <= event.unsignedEvent.date) &&
+	   (filter.until == nil || filter.until! >= event.unsignedEvent.date) &&
+	   hasTags) {
+		return true
+	}
+	return false
+}
+
 public func eventMatchesFilters<Content:NOSTR_event_content>(_ event: NOSTR_event_signed<UnsignedEvent<Content>>, filters: [Filter], logLevel: Logger.Level) -> Bool {
 	var logger = Logger(label: "filter")
 	logger.logLevel = logLevel
@@ -13,7 +40,7 @@ public func eventMatchesFilters<Content:NOSTR_event_content>(_ event: NOSTR_even
 		return true
 	}
 	for filter in filters {
-		if filter.apply(to: event) {
+		if applyTesseraFilter(event, filter: filter) {
 			return true
 		}
 		logger.trace("Event doesn't match filter, moving to next filter...")
@@ -22,9 +49,20 @@ public func eventMatchesFilters<Content:NOSTR_event_content>(_ event: NOSTR_even
 	return false
 }
 
-internal func createNewUpdatedEvent<Content:NOSTR_event_content>(_ event: NOSTR_event_signed<UnsignedEvent<Content>>, authorSigningKey:MemoryGuarded<Ed25519.PrivateKey>, admin: MemoryGuarded<PrivateKey>, newDate: NOSTR_date?, addTags: [any NOSTR_tag]?, removeTags: [any NOSTR_tag]?, overwriteTags: [any NOSTR_tag]?, kind: NOSTR_kind?, content: Content?) throws -> NOSTR_event_signed<UnsignedEvent<Content>> {
-	let eventDate = newDate ?? event.unsignedEvent.date
-	let eventKind = kind ?? event.unsignedEvent.kind
+public func author<Content:NOSTR_event_content>(ofEvent event: NOSTR_event_signed<UnsignedEvent<Content>>) -> PublicKey {
+	let tagNameString = "author"
+	let tagName = tagNameString.data(using: .utf8)!.withUnsafeBytes { ptr in
+		NOSTR_tag_name(RAW_staticbuff: ptr.baseAddress!)
+	}
+	for tag in event.unsignedEvent.tags.array {
+		if tag.NOSTR_tag_index_field == tagName {
+			return tag.NOSTR_tag_values.array.first! as! PublicKey
+		}
+	}
+	return event.unsignedEvent.publicKey
+}
+
+internal func createNewUpdatedEvent<Content:NOSTR_event_content>(_ event: NOSTR_event_signed<UnsignedEvent<Content>>, adminSigningKey:MemoryGuarded<Ed25519.PrivateKey>, addTags: [any NOSTR_tag]?, removeTags: [any NOSTR_tag]?, overwriteTags: [any NOSTR_tag]?, content: Content?) throws -> NOSTR_event_signed<UnsignedEvent<Content>> {
 	let eventContent = content ?? event.unsignedEvent.content
 	var eventTags: [any NOSTR_tag] = []
 	if let overwriteTags {
@@ -44,17 +82,16 @@ internal func createNewUpdatedEvent<Content:NOSTR_event_content>(_ event: NOSTR_
 			}
 		}
 	}
-	eventTags.append(try createAdminTag(admin: admin))
-	let unsignedEvent = try UnsignedEvent(publicKey: event.unsignedEvent.publicKey, date: eventDate, tags: eventTags, kind: eventKind, content: eventContent)
-	return try unsignedEvent.sign(as: authorSigningKey)
+	eventTags.append(try createAuthorTag(author: event.unsignedEvent.publicKey))
+	let unsignedEvent = try UnsignedEvent(publicKey: event.unsignedEvent.publicKey, date: NOSTR_date(date: Date()), tags: eventTags, kind: event.unsignedEvent.kind, content: eventContent)
+	return try unsignedEvent.sign(as: adminSigningKey)
 }
 
-internal func createAdminTag(admin: MemoryGuarded<PrivateKey>) throws -> EventTag {
-	let (edPubKey, _) = try Ed25519.generateKeys(secretKey: admin)
+internal func createAuthorTag(author: PublicKey) throws -> EventTag {
 	let dateChanged = NOSTR_date(date: Date())
-	let tagNameString = "admin"
+	let tagNameString = "author"
 	let tagName = tagNameString.data(using: .utf8)!.withUnsafeBytes { ptr in
 		NOSTR_tag_name(RAW_staticbuff: ptr.baseAddress!)
 	}
-	return try EventTag(NOSTR_tag_index_field: tagName, NOSTR_tag_values: [edPubKey, dateChanged])
+	return try EventTag(NOSTR_tag_index_field: tagName, NOSTR_tag_values: [author, dateChanged])
 }

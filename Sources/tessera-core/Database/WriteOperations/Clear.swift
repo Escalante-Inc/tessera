@@ -14,12 +14,4 @@ extension TesseraDB {
 		try newTrans.commit()
 		log.info(Logger.Message.orange("successfully deleted tessera events database"))
 	}
-	
-	/// Deletes all users.
-	public func clearUsersDatabase() throws {
-		let newTrans = try Transaction(env: env, readOnly: false)
-		try users.deleteAllEntries(tx: newTrans)
-		try newTrans.commit()
-		log.info(Logger.Message.orange("successfully deleted users database"))
-	}
 }

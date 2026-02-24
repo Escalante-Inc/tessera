@@ -9,44 +9,8 @@ import QuickLMDB
 import nostr_kit_swift
 
 extension TesseraDB {
-	/// Force deletes a user givent the user's `Ed25519 PublicKey`
-	public func forceDeleteUser(publicKey:PublicKey) {
-		do {
-			let newTrans = try Transaction(env:env, readOnly:false)
-			let user = try users.loadEntry(key:publicKey, tx:newTrans)
-			try users.deleteEntry(key:publicKey, tx:newTrans)
-			log.info(Logger.Message.orange("successfully force deleted user"), metadata:["username":"\(user.userName)", "public_key":"\(publicKey)"])
-			try newTrans.commit()
-		} catch let error {
-			log.error(Logger.Message.red("Failed to delete event due to internal error."), metadata: ["error":"\(error)"])
-		}
-	}
-	
-	/// Force deletes a user given the user's username.
-	public func forceDeleteUser(username:String) {
-		do {
-			let newTrans = try Transaction(env:env, readOnly:false)
-			try users.cursor(tx:newTrans) { cursor in
-				let (publicKey, val) = try cursor.opFirst()
-				if String(val.userName) == username {
-					try cursor.deleteCurrentEntry(flags: [])
-					log.info(Logger.Message.orange("successfully force deleted user"), metadata:["username":"\(val.userName)", "public_key":"\(publicKey)"])
-				}
-				while let (publicKey, val) = try? cursor.opNext() {
-					if String(val.userName) == username {
-						try cursor.deleteCurrentEntry(flags: [])
-						log.info(Logger.Message.orange("successfully force deleted user"), metadata:["username":"\(val.userName)", "public_key":"\(publicKey)"])
-					}
-				}
-			}
-			try newTrans.commit()
-		} catch let error {
-			log.error(Logger.Message.red("Failed to delete user due to internal error."), metadata: ["error":"\(error)"])
-		}
-		log.warning(Logger.Message.red("Failed to delete user. Username not found!"), metadata: ["username":"\(username)"])
-	}
-	
 	/// WARNING: This function does not follow Nostr deletion protocol. Use with caution.
+	/// WARNING: This deletes a signed event PERMANENTLY from the database.
 	/// CLI specific function to force delete a single event.
 	public func forceDeleteEvent(id:NOSTR_id) {
 		do {
@@ -60,6 +24,7 @@ extension TesseraDB {
 	}
 	
 	/// WARNING: This function does not follow Nostr deletion protocol. Use with caution.
+	/// /// WARNING: This deletes signed events PERMANENTLY from the database.
 	/// CLI specific function to force delete events matching the corresponding filter.
 	public func forceDeleteEventFiltered(filters:[Filter]) {
 		var deletedEvents: [StoredSignedEvent] = []
@@ -81,6 +46,5 @@ extension TesseraDB {
 			log.error(Logger.Message.red("Failed to delete events due to internal error."), metadata: ["error":"\(error)"])
 		}
 		log.info(Logger.Message.orange("successfully force deleted \(deletedEvents.count) events"))
-		// Maybe add logging about the deleted events too??
 	}
 }

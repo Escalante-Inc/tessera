@@ -17,8 +17,6 @@ public struct TesseraDB:Sendable {
 	/// Stores ALL allocated events on the tessera.
 	internal let signedEvents:Database.Strict<NOSTR_id, StoredSignedEvent>
 	
-	internal let users:Database.Strict<PublicKey, User>
-	
 	/// Deletes the environments files. Equivalent to a `rm -r 'env_file_path'`.
 	public static func deleteEnvironment(base:Path, environment:String, logLevel:Logger.Level) throws {
 		let finalMdbPath = base.appendingPathComponent("\(environment).mdb")
@@ -52,8 +50,6 @@ public struct TesseraDB:Sendable {
 		let newTrans = try Transaction(env:env, readOnly:false)
 		log.trace("created initial transaction. now creating events database", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		signedEvents = try Database.Strict<NOSTR_id, StoredSignedEvent>(env:env, name:"SignedEvents", flags:[.create], tx:newTrans)
-		log.trace("created signed events database.", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
-		users = try Database.Strict<PublicKey, User>(env:env, name:"Users", flags:[.create], tx:newTrans)
 		log.trace("created signed events database. now committing transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		try newTrans.commit()
 	}

@@ -46,24 +46,16 @@ public struct User: RAW_convertible, RAW_accessible {
 		}
 	}
 	
-	internal var privateKey: MemoryGuarded<RAW_dh25519.PrivateKey>
 	public var userName: EncodedString
 	
-	public init(privateKey: MemoryGuarded<RAW_dh25519.PrivateKey>, userName:String) {
-		self.privateKey = privateKey
+	public init(userName:String) {
 		self.userName = EncodedString(userName)
 	}
 	
 	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
-		guard count >= MemoryLayout<RAW_dh25519.PrivateKey>.size else { return nil }
-		guard let pk = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode: inputPtr, count: MemoryLayout<RAW_dh25519.PrivateKey>.size) else { return nil }
-		inputPtr = inputPtr.advanced(by: MemoryLayout<RAW_dh25519.PrivateKey>.size)
-		self.privateKey = pk
-		var dataCount = count - MemoryLayout<RAW_dh25519.PrivateKey>.size
-		
-		guard dataCount >= MemoryLayout<Bytes2>.size else { return nil }
+		guard count >= MemoryLayout<Bytes2>.size else { return nil }
 		let userNameLength = Int(Bytes2(RAW_staticbuff_seeking: &inputPtr).RAW_native())
-		dataCount -= MemoryLayout<Bytes2>.size
+		var dataCount = count - MemoryLayout<Bytes2>.size
 		guard dataCount == userNameLength else { return nil }
 		let userName = EncodedString(RAW_decode: inputPtr, count: userNameLength)
 		inputPtr = inputPtr.advanced(by: userNameLength)
@@ -71,16 +63,14 @@ public struct User: RAW_convertible, RAW_accessible {
 	}
 	
 	public func RAW_encode(count: inout RAW.size_t) {
-		count += MemoryLayout<RAW_dh25519.PrivateKey>.size + MemoryLayout<Bytes2>.size
+		count += MemoryLayout<Bytes2>.size
 		userName.RAW_encode(count: &count)
 	}
 	
 	public func RAW_encode(dest: UnsafeMutablePointer<UInt8>) -> UnsafeMutablePointer<UInt8> {
-		var dest = privateKey.RAW_encode(dest: dest)
-		
 		var userNameLength = 0; userName.RAW_encode(count: &userNameLength)
 		let userNameLengthBytes = Bytes2(RAW_native: UInt16(userNameLength))
-		dest = userNameLengthBytes.RAW_encode(dest: dest)
+		var dest = userNameLengthBytes.RAW_encode(dest: dest)
 		dest = userName.RAW_encode(dest: dest)
 		return dest
 	}

@@ -32,3 +32,20 @@ extension ByteBuffer: @retroactive NOSTR_event_content {
 		return dest.advanced(by: written)
 	}
 }
+
+public extension ByteBuffer {
+	/// Initialize a ByteBuffer using an object that conforms to `RAW_encodable`
+	init<T:RAW_encodable>(rawObject: T) {
+		var size: size_t = 0
+		rawObject.RAW_encode(count: &size)
+		var buffer = ByteBufferAllocator().buffer(capacity: Int(size))
+		buffer.writeWithUnsafeMutableBytes(minimumWritableBytes: Int(size)) { ptr in
+			guard let baseAddress = ptr.baseAddress else { return 0 }
+			rawObject.RAW_encode(
+				dest: baseAddress.assumingMemoryBound(to: UInt8.self)
+			)
+			return Int(size)
+		}
+		self = buffer
+	}
+}

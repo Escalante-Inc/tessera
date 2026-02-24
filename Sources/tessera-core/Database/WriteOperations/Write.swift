@@ -8,29 +8,6 @@ import QuickLMDB
 import nostr_kit_swift
 
 extension TesseraDB {
-	
-	/// Scribes a new user into the users database.
-	public func scribeNewUser(user:User, logLevel:Logger.Level) throws {
-		var logger = log
-		logger.logLevel = logLevel
-
-		let (edPubKey, _) = try Ed25519.generateKeys(secretKey: user.privateKey)
-		logger.trace("opening transaction to write data to users database")
-		let newTrans = try Transaction(env:env, readOnly:false)
-		try users.cursor(tx:newTrans) { cursor in
-			do {
-				guard try cursor.containsEntry(key:edPubKey) == false else {
-					logger.warning(Logger.Message.red("Attempted to write a user that already exists"))
-					throw LMDBError.keyExists
-				}
-			} catch LMDBError.notFound {}
-			logger.trace("user validated as new. writing to db.", metadata: ["username":"\(String(user.userName))"])
-			try cursor.setEntry(key:edPubKey, value:user, flags:[.noOverwrite])
-		}
-		try newTrans.commit()
-		logger.debug(Logger.Message.green("successfully wrote user to database"))
-	}
-	
 	/// Scribes a new (Signature Confirmed) events into the events database.
 	// Scribing new events may change based on the kind of event.
 	// Kind 5 can only be scribed if the referenced deleted event exists.
