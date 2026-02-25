@@ -8,6 +8,8 @@ import bedrock
 import QuickLMDB
 import nostr_kit_swift
 
+public typealias TesseraSignedEvent = NOSTR_event_signed<UnsignedEvent<ByteBuffer>>
+
 /// A database for storing Tessera `NOSTR_event_signed` and other relavent information.
 public struct TesseraDB:Sendable {
 	internal let log:Logger
@@ -15,7 +17,15 @@ public struct TesseraDB:Sendable {
 	
 	/// Primary Database that maps a `UnsignedEvent` `NOSTR_id` to a `NOSTR_event_signed`.
 	/// Stores ALL allocated events on the tessera.
-	internal let signedEvents:Database.Strict<NOSTR_id, StoredSignedEvent>
+	internal let signedEvents:Database.Strict<NOSTR_id, TesseraSignedEvent>
+	
+	// Indexes
+	internal let authorIndex:Database.Strict<PublicKey, NOSTR_idSet>
+	internal let kindIndex:Database.Strict<NOSTR_kind, NOSTR_idSet>
+	internal let dateIndex:Database.Strict<NOSTR_date, NOSTR_idSet>
+	internal let tagIndex:Database.Strict<EventTag, NOSTR_idSet>
+	
+	internal let replaceableEvents:Database.Strict<ReplaceableKey, NOSTR_idArray>
 	
 	/// Deletes the environments files. Equivalent to a `rm -r 'env_file_path'`.
 	public static func deleteEnvironment(base:Path, environment:String, logLevel:Logger.Level) throws {
@@ -45,12 +55,17 @@ public struct TesseraDB:Sendable {
 		log.logLevel = logLevel
 		self.log = log
 		log.debug("initializing tessera environment", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
-		env = try Environment(path:finalPath.path(), flags:[.noSubDir], mapSize:memoryMapSize, maxReaders:64, maxDBs:3, mode:[.ownerReadWriteExecute, .groupReadExecute, .otherReadExecute])
+		env = try Environment(path:finalPath.path(), flags:[.noSubDir], mapSize:memoryMapSize, maxReaders:64, maxDBs:6, mode:[.ownerReadWriteExecute, .groupReadExecute, .otherReadExecute])
 		log.trace("created tessera environment. now creating initial transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		let newTrans = try Transaction(env:env, readOnly:false)
-		log.trace("created initial transaction. now creating events database", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
-		signedEvents = try Database.Strict<NOSTR_id, StoredSignedEvent>(env:env, name:"SignedEvents", flags:[.create], tx:newTrans)
-		log.trace("created signed events database. now committing transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
+		log.trace("created initial transaction. now creating databases", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
+		signedEvents = try Database.Strict<NOSTR_id, TesseraSignedEvent>(env:env, name:"SignedEvents", flags:[.create], tx:newTrans)
+		authorIndex = try Database.Strict<PublicKey, NOSTR_idSet>(env:env, name:"AuthorIndex", flags:[.create], tx:newTrans)
+		kindIndex = try Database.Strict<NOSTR_kind, NOSTR_idSet>(env:env, name:"KindIndex", flags:[.create], tx:newTrans)
+		dateIndex = try Database.Strict<NOSTR_date, NOSTR_idSet>(env:env, name:"DateIndex", flags:[.create], tx:newTrans)
+		tagIndex = try Database.Strict<EventTag, NOSTR_idSet>(env:env, name:"TagIndex", flags:[.create], tx:newTrans)
+		replaceableEvents = try Database.Strict<ReplaceableKey, NOSTR_idArray>(env:env, name:"ReplaceableEvents", flags:[.create], tx:newTrans)
+		log.trace("created all databases. now committing transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		try newTrans.commit()
 	}
 }

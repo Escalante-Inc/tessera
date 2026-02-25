@@ -15,7 +15,16 @@ extension TesseraDB {
 	public func forceDeleteEvent(id:NOSTR_id) {
 		do {
 			let newTrans = try Transaction(env:env, readOnly:false)
+			let deletedEvent = try signedEvents.loadEntry(key: id, tx: newTrans)
 			try signedEvents.deleteEntry(key:id, tx:newTrans)
+			
+			
+			
+			
+			
+			
+			
+			
 			log.info(Logger.Message.orange("successfully force deleted event"), metadata: ["event_id":"\(id)"])
 			try newTrans.commit()
 		} catch let error {
@@ -24,19 +33,19 @@ extension TesseraDB {
 	}
 	
 	/// WARNING: This function does not follow Nostr deletion protocol. Use with caution.
-	/// /// WARNING: This deletes signed events PERMANENTLY from the database.
+	/// WARNING: This deletes signed events PERMANENTLY from the database.
 	/// CLI specific function to force delete events matching the corresponding filter.
 	public func forceDeleteEventFiltered(filters:[Filter]) {
-		var deletedEvents: [StoredSignedEvent] = []
+		var deletedEvents: [TesseraSignedEvent] = []
 		do {
 			let newTrans = try Transaction(env:env, readOnly:false)
 			try signedEvents.cursor(tx:newTrans) { cursor in
 				let (_, val) = try cursor.opFirst()
-				if eventMatchesFilters(val.event, filters: filters, logLevel: log.logLevel) {
+				if eventMatchesFilters(val, filters: filters, logLevel: log.logLevel) {
 					try cursor.deleteCurrentEntry(flags: []); deletedEvents.append(val)
 				}
 				while let (_, val) = try? cursor.opNext() {
-					if eventMatchesFilters(val.event, filters: filters, logLevel: log.logLevel) {
+					if eventMatchesFilters(val, filters: filters, logLevel: log.logLevel) {
 						try cursor.deleteCurrentEntry(flags: []); deletedEvents.append(val)
 					}
 				}

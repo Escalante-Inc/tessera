@@ -22,9 +22,9 @@ extension TesseraDB {
 	{
 		do {
 			let newTrans = try Transaction(env:env, readOnly:false)
-			let sse = try signedEvents.loadEntry(key: id, tx: newTrans)
-			let updatedEvent = try createNewUpdatedEvent(sse.event, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent)
-			try signedEvents.setEntry(key: updatedEvent.unsignedEvent.id, value: StoredSignedEvent(event: updatedEvent, metadata: sse.metadata), flags: [], tx: newTrans)
+			let signedEvent = try signedEvents.loadEntry(key: id, tx: newTrans)
+			let updatedEvent = try createNewUpdatedEvent(signedEvent, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent)
+			try signedEvents.setEntry(key: updatedEvent.unsignedEvent.id, value: updatedEvent, flags: [], tx: newTrans)
 			try newTrans.commit()
 		} catch let error {
 			log.error(Logger.Message.red("failed to force update event"), metadata: ["event_id": "\(id)", "error": "\(error)"])
@@ -42,22 +42,22 @@ extension TesseraDB {
 		overwriteTags: [any NOSTR_tag]? = nil,
 		newContent: ByteBuffer? = nil)
 	{
-		var updatedEvents: [StoredSignedEvent] = []
+		var updatedEvents: [TesseraSignedEvent] = []
 		do {
 			let newTrans = try Transaction(env:env, readOnly:false)
 			try signedEvents.cursor(tx:newTrans) { cursor in
-				let (_, sse) = try cursor.opFirst()
-				if eventMatchesFilters(sse.event, filters: filters, logLevel: log.logLevel) {
-					updatedEvents.append(StoredSignedEvent(event: try createNewUpdatedEvent(sse.event, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent), metadata: sse.metadata))
+				let (_, signedEvent) = try cursor.opFirst()
+				if eventMatchesFilters(signedEvent, filters: filters, logLevel: log.logLevel) {
+					updatedEvents.append(try createNewUpdatedEvent(signedEvent, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent))
 				}
 				while let (_, sse) = try? cursor.opNext() {
-					if eventMatchesFilters(sse.event, filters: filters, logLevel: log.logLevel) {
-						updatedEvents.append(StoredSignedEvent(event: try createNewUpdatedEvent(sse.event, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent), metadata: sse.metadata))
+					if eventMatchesFilters(signedEvent, filters: filters, logLevel: log.logLevel) {
+						updatedEvents.append(try createNewUpdatedEvent(signedEvent, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent))
 					}
 				}
 			}
-			for sse in updatedEvents {
-				try signedEvents.setEntry(key: sse.event.unsignedEvent.id, value: sse, flags: [], tx: newTrans)
+			for updatedEvent in updatedEvents {
+				try signedEvents.setEntry(key: updatedEvent.unsignedEvent.id, value: updatedEvent, flags: [], tx: newTrans)
 			}
 			try newTrans.commit()
 		} catch let error {

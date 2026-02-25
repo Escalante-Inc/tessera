@@ -144,7 +144,7 @@ final class SalesforceServerService: Service {
 										cliLogger.debug("Processing REQ Message")
 										await nostrRequests.set(request, for: peerInfo.publicKey)
 										
-										var signedEvents:[StoredSignedEvent] = try tesseraDB.queryEventsByFilter(filter: request.filters)
+										var signedEvents:[TesseraSignedEvent] = try tesseraDB.queryEventsByFilter(filter: request.filters)
 										
 										// Sorting by kind atm so that they receive deleted events before real ones.
 										for event in signedEvents {
@@ -165,7 +165,7 @@ final class SalesforceServerService: Service {
 										guard event.isValidSignature() else {
 											break
 										}
-										try tesseraDB.scribeNewEvent(signedEvent: StoredSignedEvent(event: event, metadata: SignedEventMetadata(tombstone: false, receivedFromRelay: peerInfo.publicKey.debugDescription)), logLevel: cliLogger.logLevel)
+										try tesseraDB.scribeNewEvent(signedEvent: event, logLevel: cliLogger.logLevel)
 										// Send event to all active requests that need it
 										let requests = await nostrRequests.all()
 										for (key, request) in requests {
