@@ -31,35 +31,9 @@ extension TesseraDB {
 		return try signedEvents.loadEntry(key: id, tx: newTrans)
 	}
 	
-	/// Filters out all events from the database that match the given filters.
-	/// Follows the NOSTR protocol where the filters use an OR function and each filter's fields use an AND function.
-	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
-	///
-	/// Uses a 'dumb' filter. Ignores deletions or updates on events.
-	/// Time complexity: O(n) where n is the number of signed events.
-	public func queryEventsByFilter(filter:[Filter]) throws -> [TesseraSignedEvent] {
-		var filteredEvents:[TesseraSignedEvent] = []
-		// Filters are OR'd and filter fields are AND'ed
-		let newTrans = try Transaction(env:env, readOnly:true)
-		do {
-			try signedEvents.cursor(tx:newTrans) { cursor in
-				let (_, val) = try cursor.opFirst()
-				if eventMatchesFilters(val, filters: filter, logLevel: log.logLevel) {
-					filteredEvents.append(val)
-				}
-				while let (_, val) = try? cursor.opNext() {
-					if eventMatchesFilters(val, filters: filter, logLevel: log.logLevel) {
-						filteredEvents.append(val)
-					}
-				}
-			}
-		} catch { }
-		log.debug(Logger.Message.green("successfully queried \(filteredEvents.count) events that match the given filters"))
-		return filteredEvents
-	}
-	
-	public func queryEventsBySmartFilter(filters:[Filter]) throws -> [TesseraSignedEvent] {
-		let newTrans = try Transaction(env:env, readOnly:true)
+	/// Gets all filter eligible ids.
+	/// Returns the tuple containing all filter eligible ids and all author ids.
+	public func getFilterEligibleIds(filters:[Filter], tx:borrowing Transaction) throws -> (Set<NOSTR_id>, Set<NOSTR_id>) {
 		var allAuthors = Set<NOSTR_id>()
 		var allFilterIds = Set<NOSTR_id>()
 		for filter in filters {
@@ -79,7 +53,13 @@ extension TesseraDB {
 				authorIds = Set<NOSTR_id>()
 				for author in filter.authors {
 					do {
-						authorIds.formUnion(try authorIndex.loadEntry(key: author, tx: newTrans).ids)
+						try authorIndex.cursor(tx: tx) { cursor in
+							let id = try cursor.opSet(key: author)
+							authorIds.insert(id)
+							while let id = try? cursor.opNextDup() {
+								authorIds.insert(id)
+							}
+						}
 					} catch {}
 				}
 				allAuthors.formUnion(authorIds)
@@ -90,7 +70,13 @@ extension TesseraDB {
 				kindIds = Set<NOSTR_id>()
 				for kind in filter.kinds {
 					do {
-						kindIds.formUnion(try kindIndex.loadEntry(key: kind, tx: newTrans).ids)
+						try kindIndex.cursor(tx: tx) { cursor in
+							let id = try cursor.opSet(key: kind)
+							kindIds.insert(id)
+							while let id = try? cursor.opNextDup() {
+								kindIds.insert(id)
+							}
+						}
 					} catch {}
 				}
 			}
@@ -100,9 +86,24 @@ extension TesseraDB {
 				do {
 					var iterator = filter.tags.makeIterator()
 					if let firstTag = iterator.next() {
-						tagIds = try tagIndex.loadEntry(key: firstTag as! EventTag, tx: newTrans).ids
+						tagIds = Set<NOSTR_id>()
+						try tagIndex.cursor(tx: tx) { cursor in
+							let id = try cursor.opSet(key: firstTag as! EventTag)
+							tagIds.insert(id)
+							while let id = try? cursor.opNextDup() {
+								tagIds.insert(id)
+							}
+						}
 						while let tag = iterator.next() {
-							tagIds.formIntersection(try tagIndex.loadEntry(key: tag as! EventTag, tx: newTrans).ids)
+							var newTagIds = Set<NOSTR_id>()
+							try tagIndex.cursor(tx: tx) { cursor in
+								let id = try cursor.opSet(key: tag as! EventTag)
+								newTagIds.insert(id)
+								while let id = try? cursor.opNextDup() {
+									newTagIds.insert(id)
+								}
+							}
+							tagIds.formIntersection(newTagIds)
 						}
 					}
 				} catch {
@@ -115,7 +116,7 @@ extension TesseraDB {
 			if filter.since != nil || filter.until != nil {
 				dateIds = Set<NOSTR_id>()
 				do {
-					try dateIndex.cursor(tx: newTrans) { cursor in
+					try dateIndex.cursor(tx: tx) { cursor in
 						if let since = filter.since {
 							_ = try cursor.opSetRange(key: since)
 						} else {
@@ -124,18 +125,18 @@ extension TesseraDB {
 						if let until = filter.until {
 							let (key, val) = try cursor.opGetCurrent()
 							if key < until {
-								dateIds.formUnion(val.ids)
+								dateIds.insert(val)
 							}
 							while let (key, val) = try? cursor.opNext() {
 								if key < until {
-									dateIds.formUnion(val.ids)
+									dateIds.insert(val)
 								}
 							}
 						} else {
 							let (_, val) = try cursor.opGetCurrent()
-							dateIds.formUnion(val.ids)
+							dateIds.insert(val)
 							while let (_, val) = try? cursor.opNext() {
-								dateIds.formUnion(val.ids)
+								dateIds.insert(val)
 							}
 						}
 					}
@@ -156,13 +157,52 @@ extension TesseraDB {
 			
 			allFilterIds.formUnion(filterIds)
 		}
+		return (allFilterIds, allAuthors)
+	}
+	
+	/// Filters out all events from the database that match the given filters.
+	/// Follows the NOSTR protocol where the filters use an OR function and each filter's fields use an AND function.
+	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
+	///
+	/// Uses a 'dumb' filter. Ignores deletions or updates on events.
+	public func queryEventsByDumbFilter(filters:[Filter]) throws -> [TesseraSignedEvent] {
+		let newTrans = try Transaction(env:env, readOnly:true)
+		let (allFilterIds, _) = try getFilterEligibleIds(filters: filters, tx: newTrans)
+		guard !allFilterIds.isEmpty else {
+			return []
+		}
+		var queriedEvents:[TesseraSignedEvent] = []
+		try signedEvents.cursor(tx:newTrans) { cursor in
+			for id in allFilterIds {
+				queriedEvents.append(try cursor.opSet(key: id))
+			}
+		}
+		return queriedEvents
+	}
+	
+	/// Filters out all events from the database that match the given filters.
+	/// Follows the NOSTR protocol where the filters use an OR function and each filter's fields use an AND function.
+	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
+	///
+	/// Uses a 'smart' filter. Respects deletions and updates on events.
+	public func queryEventsBySmartFilter(filters:[Filter]) throws -> [TesseraSignedEvent] {
+		let newTrans = try Transaction(env:env, readOnly:true)
+		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters, tx: newTrans)
 		guard !allFilterIds.isEmpty else {
 			return []
 		}
 		// Now have all filtered ids. Still would need to clean deleted events and updated events.
 		// Removing ids for deleted events
 		do {
-			var kind5Ids = try kindIndex.loadEntry(key: NOSTR_kind(RAW_native: 5), tx: newTrans).ids
+			var kind5Ids = Set<NOSTR_id>()
+			try kindIndex.cursor(tx: newTrans) { cursor in
+				let id = try cursor.opSet(key: NOSTR_kind(RAW_native: 5))
+				kind5Ids.insert(id)
+				while let id = try? cursor.opNextDup() {
+					kind5Ids.insert(id)
+				}
+			}
+			
 			if !allAuthors.isEmpty { kind5Ids.formIntersection(allAuthors) }
 			var deleteIds = Set<NOSTR_id>()
 			try signedEvents.cursor(tx:newTrans) { cursor in
@@ -213,8 +253,11 @@ extension TesseraDB {
 			
 			let key = ReplaceableKey(pubkey: pubkey, kind: kind, dTag: dTag)
 			
-			if try replaceableEvents.loadEntry(key: key, tx: newTrans).ids.first! == signedEvent.unsignedEvent.id {
-				upToDateEvents.append(signedEvent)
+			try replaceableEvents.cursor(tx: newTrans) { cursor in
+				_ = try cursor.opSet(key: key)
+				if try cursor.opLastDup().id == signedEvent.unsignedEvent.id {
+					upToDateEvents.append(signedEvent)
+				}
 			}
 		}
 		

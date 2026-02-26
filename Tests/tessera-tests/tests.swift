@@ -56,7 +56,7 @@ extension TesseraTests {
 			(aliceEd25519PublicKey, aliceEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: alicePrivateKey)
 			(bobEd25519PublicKey, bobEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: bobPrivateKey)
 			(adminEd25519PublicKey, adminEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: adminPrivateKey)
-			self.tesseraDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .trace)
+			self.tesseraDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
 			aliceSignedEvent = try UnsignedEvent(
 				publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -1, to: Date())!),
 				tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Alice Tag"])],
@@ -244,18 +244,56 @@ extension TesseraTests {
 			let events = try tesseraDB.queryEventsBySmartFilter(filters: [aliceFilter])
 			#expect(events.count == 1)
 		}
+	}
+}
+
+extension TesseraTests {
+	@Suite("Large Data Tests", .serialized)
+	class LargeDataTests {
+		let cliLogger:Logger
+		let base = Path(FileManager.default.homeDirectoryForCurrentUser.path)
+		let tesseraDB:TesseraDB
+		
+		static let aliceStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI="), count:32)!
+		static let bobStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A="), count:32)!
+		static let adminStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4="), count:32)!
+
+		let aliceEd25519PublicKey:PublicKey
+		let aliceEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
+		let alicePrivateKey:MemoryGuarded<PrivateKey>
+		
+		let bobEd25519PublicKey:PublicKey
+		let bobEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
+		let bobPrivateKey:MemoryGuarded<PrivateKey>
+		
+		let adminEd25519PublicKey:PublicKey
+		let adminEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
+		let adminPrivateKey:MemoryGuarded<PrivateKey>
+		
+		init() throws {
+			var buildLogger = Logger(label:"\(String(describing:Self.self))")
+			buildLogger.logLevel = .debug
+			cliLogger = buildLogger
+			alicePrivateKey = Self.aliceStaticPrivateKey
+			bobPrivateKey = Self.bobStaticPrivateKey
+			adminPrivateKey = Self.adminStaticPrivateKey
+			(aliceEd25519PublicKey, aliceEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: alicePrivateKey)
+			(bobEd25519PublicKey, bobEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: bobPrivateKey)
+			(adminEd25519PublicKey, adminEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: adminPrivateKey)
+			self.tesseraDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
+		}
 		
 		@Test func fillDatabaseWithData() throws {
 			let authors = [(aliceEd25519PublicKey, aliceEd25519PrivateKey), (bobEd25519PublicKey, bobEd25519PrivateKey), (adminEd25519PublicKey, adminEd25519PrivateKey)]
 			let tagValues = ["Tag0", "Tag1", "Tag2", "Tag3", "Tag4", "Tag5", "Tag6", "Tag7", "Tag8", "Tag9"]
 			let tagNames: [Character] = Array("abcefghijklmnopqrstuvwxyz")
 			
-			for _ in 0..<20_000 {
+			for _ in 0..<50_000 {
 				let author = authors.randomElement()!
 				let kind = Int.random(in: [10_000...19_999, 30_000...39_999].randomElement()!)
 				let signedEvent = try UnsignedEvent(
 					publicKey: author.0,
-					date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -1, to: Date())!),
+					date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: Int.random(in: -365...365), to: Date())!),
 					tags: [EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!]),
 						   kind > 20_000 ? EventTag(tagName: "d", tagValues: [tagValues.randomElement()!]) :
 							EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!])],
@@ -266,14 +304,38 @@ extension TesseraTests {
 			
 			cliLogger.info("Database Size: ")
 		}
+		
+		@Test func smartFilter() throws {
+			let filterA = Filter(authors: [aliceEd25519PublicKey], tags: [EventTag(tagName: "a", tagValues: ["Tag0"])])
+			let filterB = Filter(authors: [aliceEd25519PublicKey, bobEd25519PublicKey],
+								 since: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -50, to: Date())!),
+								 until: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: 50, to: Date())!))
+			let events = try tesseraDB.queryEventsBySmartFilter(filters: [filterA, filterB])
+			cliLogger.info("Found \(events.count) events")
+		}
+		
+		@Test func dumbFilter() throws {
+			let filterA = Filter(authors: [aliceEd25519PublicKey], tags: [EventTag(tagName: "a", tagValues: ["Tag0"])])
+			let filterB = Filter(authors: [aliceEd25519PublicKey, bobEd25519PublicKey],
+								 since: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -50, to: Date())!),
+								 until: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: 50, to: Date())!))
+			let events = try tesseraDB.queryEventsByDumbFilter(filters: [filterA, filterB])
+			cliLogger.info("Found \(events.count) events")
+		}
+		
+		@Test func deleteDatabase() {
+			do {
+				try TesseraDB.deleteEnvironment(base: base, environment: "tessera", logLevel: .trace)
+			} catch {
+				cliLogger.error(Logger.Message.red("Failed to delete the testing database at \(String(describing: base.path))"))
+			}
+		}
 	}
 }
 
 extension TesseraTests {
-	
 	@Suite("encode decode tests")
 	class EncodeDecodeTests {
-		
 		@Test func encodeDecodeByteBuffer() {
 			let byteBuffer = ByteBufferAllocator().buffer(staticString: "Tessera Test String")
 			var byteBufferLen = 0; byteBuffer.RAW_encode(count: &byteBufferLen)

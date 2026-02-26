@@ -144,7 +144,7 @@ final class SalesforceServerService: Service {
 										cliLogger.debug("Processing REQ Message")
 										await nostrRequests.set(request, for: peerInfo.publicKey)
 										
-										var signedEvents:[TesseraSignedEvent] = try tesseraDB.queryEventsByFilter(filter: request.filters)
+										var signedEvents:[TesseraSignedEvent] = try tesseraDB.queryEventsBySmartFilter(filters: request.filters)
 										
 										// Sorting by kind atm so that they receive deleted events before real ones.
 										for event in signedEvents {
