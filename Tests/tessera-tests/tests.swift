@@ -237,9 +237,34 @@ extension TesseraTests {
 			#expect(events.count == 1)
 		}
 		
-		@Test func forceDeleteEventFiltered() {
-			tesseraDB.forceDeleteEventFiltered(filters: [Filter(kinds: [NOSTR_kind(RAW_native: 10000)])])
-			#expect(tesseraDB.eventCount == 4)
+		@Test func smartFilterWithForceDelete() throws {
+			tesseraDB.forceDeleteEvent(id: aliceSignedEvent.unsignedEvent.id)
+			#expect(tesseraDB.eventCount == 5)
+			let aliceFilter = Filter(authors: [aliceEd25519PublicKey])
+			let events = try tesseraDB.queryEventsBySmartFilter(filters: [aliceFilter])
+			#expect(events.count == 1)
+		}
+		
+		@Test func fillDatabaseWithData() throws {
+			let authors = [(aliceEd25519PublicKey, aliceEd25519PrivateKey), (bobEd25519PublicKey, bobEd25519PrivateKey), (adminEd25519PublicKey, adminEd25519PrivateKey)]
+			let tagValues = ["Tag0", "Tag1", "Tag2", "Tag3", "Tag4", "Tag5", "Tag6", "Tag7", "Tag8", "Tag9"]
+			let tagNames: [Character] = Array("abcefghijklmnopqrstuvwxyz")
+			
+			for _ in 0..<20_000 {
+				let author = authors.randomElement()!
+				let kind = Int.random(in: [10_000...19_999, 30_000...39_999].randomElement()!)
+				let signedEvent = try UnsignedEvent(
+					publicKey: author.0,
+					date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -1, to: Date())!),
+					tags: [EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!]),
+						   kind > 20_000 ? EventTag(tagName: "d", tagValues: [tagValues.randomElement()!]) :
+							EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!])],
+					kind: NOSTR_kind(RAW_native: UInt16(kind)),
+					content: ByteBuffer(string: "")).sign(as: author.1)
+				try tesseraDB.scribeNewEvent(signedEvent: signedEvent, logLevel: .warning)
+			}
+			
+			cliLogger.info("Database Size: ")
 		}
 	}
 }

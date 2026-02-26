@@ -18,11 +18,78 @@ extension TesseraDB {
 			let deletedEvent = try signedEvents.loadEntry(key: id, tx: newTrans)
 			try signedEvents.deleteEntry(key:id, tx:newTrans)
 			
+			// Remove Event from the indexes
+			try authorIndex.cursor(tx:newTrans) { cursor in
+				if try cursor.containsEntry(key: deletedEvent.unsignedEvent.publicKey) {
+					var nostrIds = try cursor.opSet(key: deletedEvent.unsignedEvent.publicKey)
+					nostrIds.ids.remove(deletedEvent.unsignedEvent.id)
+					if nostrIds.ids.isEmpty {
+						try cursor.deleteCurrentEntry(flags: [])
+					} else {
+						try cursor.setEntry(key: deletedEvent.unsignedEvent.publicKey, value: nostrIds, flags: [])
+					}
+				}
+			}
 			
+			try kindIndex.cursor(tx:newTrans) { cursor in
+				if try cursor.containsEntry(key: deletedEvent.unsignedEvent.kind) {
+					var nostrIds = try cursor.opSet(key: deletedEvent.unsignedEvent.kind)
+					nostrIds.ids.remove(deletedEvent.unsignedEvent.id)
+					if nostrIds.ids.isEmpty {
+						try cursor.deleteCurrentEntry(flags: [])
+					} else {
+						try cursor.setEntry(key: deletedEvent.unsignedEvent.kind, value: nostrIds, flags: [])
+					}
+				}
+			}
 			
+			try dateIndex.cursor(tx:newTrans) { cursor in
+				if try cursor.containsEntry(key: deletedEvent.unsignedEvent.date) {
+					var nostrIds = try cursor.opSet(key: deletedEvent.unsignedEvent.date)
+					nostrIds.ids.remove(deletedEvent.unsignedEvent.id)
+					if nostrIds.ids.isEmpty {
+						try cursor.deleteCurrentEntry(flags: [])
+					} else {
+						try cursor.setEntry(key: deletedEvent.unsignedEvent.date, value: nostrIds, flags: [])
+					}
+				}
+			}
 			
+			try tagIndex.cursor(tx:newTrans) { cursor in
+				for tag in deletedEvent.unsignedEvent.tags.array {
+					var dbTag = tag
+					// Tags are indexed on their name and only the first item in the values array
+					if tag.NOSTR_tag_values.array.count > 1 {
+						dbTag.NOSTR_tag_values.array = [dbTag.NOSTR_tag_values.array.first!]
+					}
+					var nostrIds = try cursor.opSet(key: dbTag as! EventTag)
+					nostrIds.ids.remove(deletedEvent.unsignedEvent.id)
+					if nostrIds.ids.isEmpty {
+						try cursor.deleteCurrentEntry(flags: [])
+					} else {
+						try cursor.setEntry(key: dbTag as! EventTag, value: nostrIds, flags: [])
+					}
+				}
+			}
 			
-			
+			if isReplaceableKind(deletedEvent.unsignedEvent.kind) {
+				var dTag:(any NOSTR_tag_value)? = nil
+				if let tag = deletedEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) {
+					dTag = tag.NOSTR_tag_values.array.first!
+				}
+				let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
+				try replaceableEvents.cursor(tx: newTrans) { cursor in
+					var nostrIds = try cursor.opSet(key: replaceableKey)
+					if let index = nostrIds.ids.firstIndex(of: deletedEvent.unsignedEvent.id) {
+						nostrIds.ids.remove(at: index)
+					}
+					if nostrIds.ids.isEmpty {
+						try cursor.deleteCurrentEntry(flags: [])
+					} else {
+						try cursor.setEntry(key: replaceableKey, value: nostrIds, flags: [])
+					}
+				}
+			}
 			
 			
 			log.info(Logger.Message.orange("successfully force deleted event"), metadata: ["event_id":"\(id)"])
