@@ -48,55 +48,17 @@ extension TesseraDB {
 		}
 		
 		// Add Event to the indexes
-		try authorIndex.cursor(tx:newTrans) { cursor in
-			if try cursor.containsEntry(key: signedEvent.unsignedEvent.publicKey) {
-				var nostrIds = try cursor.opSet(key: signedEvent.unsignedEvent.publicKey)
-				nostrIds.ids.insert(signedEvent.unsignedEvent.id)
-				try cursor.setEntry(key: signedEvent.unsignedEvent.publicKey, value: nostrIds, flags: [])
-			} else {
-				let nostrIds = NOSTR_idSet(ids: [signedEvent.unsignedEvent.id])
-				try cursor.setEntry(key: signedEvent.unsignedEvent.publicKey, value: nostrIds, flags: [])
-			}
-		}
+		try authorIndex.setEntry(key: signedEvent.unsignedEvent.publicKey, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
+		try kindIndex.setEntry(key: signedEvent.unsignedEvent.kind, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
+		try dateIndex.setEntry(key: signedEvent.unsignedEvent.date, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		
-		try kindIndex.cursor(tx:newTrans) { cursor in
-			if try cursor.containsEntry(key: signedEvent.unsignedEvent.kind) {
-				var nostrIds = try cursor.opSet(key: signedEvent.unsignedEvent.kind)
-				nostrIds.ids.insert(signedEvent.unsignedEvent.id)
-				try cursor.setEntry(key: signedEvent.unsignedEvent.kind, value: nostrIds, flags: [])
-			} else {
-				let nostrIds = NOSTR_idSet(ids: [signedEvent.unsignedEvent.id])
-				try cursor.setEntry(key: signedEvent.unsignedEvent.kind, value: nostrIds, flags: [])
+		for tag in signedEvent.unsignedEvent.tags.array {
+			var dbTag = tag
+			// Tags are indexed on their name and only the first item in the values array
+			if tag.NOSTR_tag_values.array.count > 1 {
+				dbTag.NOSTR_tag_values.array = [dbTag.NOSTR_tag_values.array.first!]
 			}
-		}
-		
-		try dateIndex.cursor(tx:newTrans) { cursor in
-			if try cursor.containsEntry(key: signedEvent.unsignedEvent.date) {
-				var nostrIds = try cursor.opSet(key: signedEvent.unsignedEvent.date)
-				nostrIds.ids.insert(signedEvent.unsignedEvent.id)
-				try cursor.setEntry(key: signedEvent.unsignedEvent.date, value: nostrIds, flags: [])
-			} else {
-				let nostrIds = NOSTR_idSet(ids: [signedEvent.unsignedEvent.id])
-				try cursor.setEntry(key: signedEvent.unsignedEvent.date, value: nostrIds, flags: [])
-			}
-		}
-		
-		try tagIndex.cursor(tx:newTrans) { cursor in
-			for tag in signedEvent.unsignedEvent.tags.array {
-				var dbTag = tag
-				// Tags are indexed on their name and only the first item in the values array
-				if tag.NOSTR_tag_values.array.count > 1 {
-					dbTag.NOSTR_tag_values.array = [dbTag.NOSTR_tag_values.array.first!]
-				}
-				if try cursor.containsEntry(key: dbTag as! EventTag) {
-					var nostrIds = try cursor.opSet(key: dbTag as! EventTag)
-					nostrIds.ids.insert(signedEvent.unsignedEvent.id)
-					try cursor.setEntry(key: dbTag as! EventTag, value: nostrIds, flags: [])
-				} else {
-					let nostrIds = NOSTR_idSet(ids: [signedEvent.unsignedEvent.id])
-					try cursor.setEntry(key: dbTag as! EventTag, value: nostrIds, flags: [])
-				}
-			}
+			try tagIndex.setEntry(key: dbTag as! EventTag, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		}
 		
 		if isReplaceableKind(signedEvent.unsignedEvent.kind) {
@@ -105,16 +67,9 @@ extension TesseraDB {
 				dTag = tag.NOSTR_tag_values.array.first!
 			}
 			let replaceableKey = ReplaceableKey(pubkey: signedEvent.unsignedEvent.publicKey, kind: signedEvent.unsignedEvent.kind, dTag: dTag)
-			try replaceableEvents.cursor(tx: newTrans) { cursor in
-				if try cursor.containsEntry(key: replaceableKey) {
-					var nostrIds = try cursor.opSet(key: replaceableKey)
-					nostrIds.ids.insert(signedEvent.unsignedEvent.id, at: 0)
-					try cursor.setEntry(key: replaceableKey, value: nostrIds, flags: [])
-				} else {
-					let nostrIds = NOSTR_idArray(ids: [signedEvent.unsignedEvent.id])
-					try cursor.setEntry(key: replaceableKey, value: nostrIds, flags: [])
-				}
-			}
+			let datedId = DatedID(date: signedEvent.unsignedEvent.date, id: signedEvent.unsignedEvent.id)
+			
+			try replaceableEvents.setEntry(key: replaceableKey, value: datedId, flags: [], tx: newTrans)
 		}
 		
 		try newTrans.commit()

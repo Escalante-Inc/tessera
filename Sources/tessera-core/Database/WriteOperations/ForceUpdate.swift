@@ -44,22 +44,22 @@ extension TesseraDB {
 	{
 		var updatedEvents: [TesseraSignedEvent] = []
 		do {
-			let newTrans = try Transaction(env:env, readOnly:false)
-			try signedEvents.cursor(tx:newTrans) { cursor in
-				let (_, signedEvent) = try cursor.opFirst()
-				if eventMatchesFilters(signedEvent, filters: filters, logLevel: log.logLevel) {
-					updatedEvents.append(try createNewUpdatedEvent(signedEvent, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent))
-				}
-				while let (_, sse) = try? cursor.opNext() {
-					if eventMatchesFilters(signedEvent, filters: filters, logLevel: log.logLevel) {
-						updatedEvents.append(try createNewUpdatedEvent(signedEvent, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent))
-					}
-				}
-			}
-			for updatedEvent in updatedEvents {
-				try signedEvents.setEntry(key: updatedEvent.unsignedEvent.id, value: updatedEvent, flags: [], tx: newTrans)
-			}
-			try newTrans.commit()
+//			let newTrans = try Transaction(env:env, readOnly:false)
+//			try signedEvents.cursor(tx:newTrans) { cursor in
+//				let (_, signedEvent) = try cursor.opFirst()
+//				if eventMatchesFilters(signedEvent, filters: filters, logLevel: log.logLevel) {
+//					updatedEvents.append(try createNewUpdatedEvent(signedEvent, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent))
+//				}
+//				while let (_, sse) = try? cursor.opNext() {
+//					if eventMatchesFilters(signedEvent, filters: filters, logLevel: log.logLevel) {
+//						updatedEvents.append(try createNewUpdatedEvent(signedEvent, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent))
+//					}
+//				}
+//			}
+//			for updatedEvent in updatedEvents {
+//				try signedEvents.setEntry(key: updatedEvent.unsignedEvent.id, value: updatedEvent, flags: [], tx: newTrans)
+//			}
+//			try newTrans.commit()
 		} catch let error {
 			log.error(Logger.Message.red("unable to force update events matching the filter"), metadata: ["error": "\(error)"])
 		}

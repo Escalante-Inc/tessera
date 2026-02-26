@@ -20,12 +20,12 @@ public struct TesseraDB:Sendable {
 	internal let signedEvents:Database.Strict<NOSTR_id, TesseraSignedEvent>
 	
 	// Indexes
-	internal let authorIndex:Database.Strict<PublicKey, NOSTR_idSet>
-	internal let kindIndex:Database.Strict<NOSTR_kind, NOSTR_idSet>
-	internal let dateIndex:Database.Strict<NOSTR_date, NOSTR_idSet>
-	internal let tagIndex:Database.Strict<EventTag, NOSTR_idSet>
+	internal let authorIndex:Database.DupSort<PublicKey, NOSTR_id>
+	internal let kindIndex:Database.DupSort<NOSTR_kind, NOSTR_id>
+	internal let dateIndex:Database.DupSort<NOSTR_date, NOSTR_id>
+	internal let tagIndex:Database.DupSort<EventTag, NOSTR_id>
 	
-	internal let replaceableEvents:Database.Strict<ReplaceableKey, NOSTR_idArray>
+	internal let replaceableEvents:Database.DupSort<ReplaceableKey, DatedID>
 	
 	/// Deletes the environments files. Equivalent to a `rm -r 'env_file_path'`.
 	public static func deleteEnvironment(base:Path, environment:String, logLevel:Logger.Level) throws {
@@ -60,11 +60,11 @@ public struct TesseraDB:Sendable {
 		let newTrans = try Transaction(env:env, readOnly:false)
 		log.trace("created initial transaction. now creating databases", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		signedEvents = try Database.Strict<NOSTR_id, TesseraSignedEvent>(env:env, name:"SignedEvents", flags:[.create], tx:newTrans)
-		authorIndex = try Database.Strict<PublicKey, NOSTR_idSet>(env:env, name:"AuthorIndex", flags:[.create], tx:newTrans)
-		kindIndex = try Database.Strict<NOSTR_kind, NOSTR_idSet>(env:env, name:"KindIndex", flags:[.create], tx:newTrans)
-		dateIndex = try Database.Strict<NOSTR_date, NOSTR_idSet>(env:env, name:"DateIndex", flags:[.create], tx:newTrans)
-		tagIndex = try Database.Strict<EventTag, NOSTR_idSet>(env:env, name:"TagIndex", flags:[.create], tx:newTrans)
-		replaceableEvents = try Database.Strict<ReplaceableKey, NOSTR_idArray>(env:env, name:"ReplaceableEvents", flags:[.create], tx:newTrans)
+		authorIndex = try Database.DupSort<PublicKey, NOSTR_id>(env:env, name:"AuthorIndex", flags:[.create], tx:newTrans)
+		kindIndex = try Database.DupSort<NOSTR_kind, NOSTR_id>(env:env, name:"KindIndex", flags:[.create], tx:newTrans)
+		dateIndex = try Database.DupSort<NOSTR_date, NOSTR_id>(env:env, name:"DateIndex", flags:[.create], tx:newTrans)
+		tagIndex = try Database.DupSort<EventTag, NOSTR_id>(env:env, name:"TagIndex", flags:[.create], tx:newTrans)
+		replaceableEvents = try Database.DupSort<ReplaceableKey, DatedID>(env:env, name:"ReplaceableEvents", flags:[.create], tx:newTrans)
 		log.trace("created all databases. now committing transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		try newTrans.commit()
 	}
