@@ -18,6 +18,11 @@ extension TesseraDB {
 		guard (20_000...29_999).contains(signedEvent.unsignedEvent.kind.RAW_native()) == false else {
 			throw SignedNoteError.cantStoreEphemeralEvent
 		}
+		if isParameterizedReplaceable(signedEvent.unsignedEvent.kind) {
+			guard let tag = signedEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) else {
+				throw SignedNoteError.invalidParameterizedEvent
+			}
+		}
 
 		// Create Event in the Main DB
 		logger.trace("opening transaction to write data to events database")

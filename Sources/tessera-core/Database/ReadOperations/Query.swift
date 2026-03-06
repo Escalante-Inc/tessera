@@ -20,7 +20,7 @@ internal func isReplaceableKind(_ kind: NOSTR_kind) -> Bool{
 	let kindInt = kind.RAW_native()
 	return kindInt == 0 || kindInt == 3 || (10_000...19_999).contains(kindInt) || (30_000...39_999).contains(kindInt)
 }
-fileprivate func isParameterizedReplaceable(_ kind: NOSTR_kind) -> Bool {
+internal func isParameterizedReplaceable(_ kind: NOSTR_kind) -> Bool {
 	return (30000...39999).contains(kind.RAW_native())
 }
 

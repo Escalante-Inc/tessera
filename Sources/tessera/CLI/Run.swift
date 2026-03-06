@@ -21,11 +21,26 @@ struct CLI:AsyncParsableCommand {
 		subcommands:[
 				Run.self,
 				GenerateKeys.self,
+				GenerateEd25519Keys.self,
 				Config.self
 			]
 		)
 	
 	struct GenerateKeys:ParsableCommand {
+		static let configuration = CommandConfiguration(
+			abstract:"Generate a new WireGuard key pair."
+		)
+		func run() throws {
+			let pk = try MemoryGuarded<PrivateKey>.new()
+			let (publicKey, privateKey) = (PublicKey(privateKey:pk), pk)
+			let publicKeyBase64 = String(RAW_base64.encode(publicKey))
+			let privateKeyBase64 = String(RAW_base64.encode(privateKey))
+			print("Public Key: \(publicKeyBase64)")
+			print("Private Key: \(privateKeyBase64)")
+		}
+	}
+	
+	struct GenerateEd25519Keys:ParsableCommand {
 		static let configuration = CommandConfiguration(
 			abstract:"Generate a new nostr note key pair."
 		)
@@ -59,9 +74,9 @@ struct CLI:AsyncParsableCommand {
 		var myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 
 		func run() async throws {
-//			let logger = Logger(label: "calendar-app-server")
-//			let calendarServerService = CalendarServerService(databasePath: databasePath, configurationPath: configurationPath, myPort: myPort, myPrivateKey: myPrivateKey)
-//			try await ServiceGroup(services:[calendarServerService], logger: logger).run()
+			let logger = Logger(label: "tessera-server")
+			let tesseraService = TesseraService(databasePath: databasePath, configurationPath: configurationPath, myPort: myPort, myPrivateKey: myPrivateKey)
+			try await ServiceGroup(services:[tesseraService], logger: logger).run()
 		}
 	}
 }
