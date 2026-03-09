@@ -6,4 +6,6 @@ public enum SignedNoteError : Error {
 	case invalidKind5PublicKey
 	
 	case invalidParameterizedEvent
+	
+	case invalidUserNote
 }

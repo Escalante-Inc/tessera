@@ -17,11 +17,11 @@ fileprivate func isNewer(_ lhs: TesseraSignedEvent, than rhs: TesseraSignedEvent
 }
 
 internal func isReplaceableKind(_ kind: NOSTR_kind) -> Bool{
-	let kindInt = kind.RAW_native()
-	return kindInt == 0 || kindInt == 3 || (10_000...19_999).contains(kindInt) || (30_000...39_999).contains(kindInt)
+	let kindInt = kind.RAW_native() % 40_000
+	return kindInt == 3 || (10_000...19_999).contains(kindInt) || (30_000...39_999).contains(kindInt)
 }
 internal func isParameterizedReplaceable(_ kind: NOSTR_kind) -> Bool {
-	return (30000...39999).contains(kind.RAW_native())
+	return (30000...39999).contains(kind.RAW_native() % 40_000)
 }
 
 extension TesseraDB {
@@ -165,7 +165,7 @@ extension TesseraDB {
 	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
 	///
 	/// Uses a 'dumb' filter. Ignores deletions or updates on events.
-	public func queryEventsByDumbFilter(filters:[Filter]) throws -> [TesseraSignedEvent] {
+	public func queryEventsByDumbFilter(filters:[Filter], user: PublicKey? = nil) throws -> [TesseraSignedEvent] {
 		let newTrans = try Transaction(env:env, readOnly:true)
 		let (allFilterIds, _) = try getFilterEligibleIds(filters: filters, tx: newTrans)
 		guard !allFilterIds.isEmpty else {
@@ -177,6 +177,12 @@ extension TesseraDB {
 				queriedEvents.append(try cursor.opSet(key: id))
 			}
 		}
+		if let user = user {
+			let uniqueKinds = Array(Set(queriedEvents.map { $0.unsignedEvent.kind }))
+			guard try checkReadAccess(user: user, kinds: uniqueKinds, tx: newTrans) else {
+				throw AccessLevelError.invalidReadAccess
+			}
+		}
 		return queriedEvents
 	}
 	
@@ -185,7 +191,7 @@ extension TesseraDB {
 	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
 	///
 	/// Uses a 'smart' filter. Respects deletions and updates on events.
-	public func queryEventsBySmartFilter(filters:[Filter]) throws -> [TesseraSignedEvent] {
+	public func queryEventsBySmartFilter(filters:[Filter], user: PublicKey? = nil) throws -> [TesseraSignedEvent] {
 		let newTrans = try Transaction(env:env, readOnly:true)
 		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters, tx: newTrans)
 		guard !allFilterIds.isEmpty else {
@@ -262,7 +268,14 @@ extension TesseraDB {
 		}
 		
 		if let limit = filters.first?.limit?.RAW_native() {
-			return Array(upToDateEvents.sorted { $0.unsignedEvent.date > $1.unsignedEvent.date }.prefix(Int(limit)))
+			upToDateEvents = Array(upToDateEvents.sorted { $0.unsignedEvent.date > $1.unsignedEvent.date }.prefix(Int(limit)))
+		}
+		
+		if let user = user {
+			let uniqueKinds = Array(Set(upToDateEvents.map { $0.unsignedEvent.kind }))
+			guard try checkReadAccess(user: user, kinds: uniqueKinds, tx: newTrans) else {
+				throw AccessLevelError.invalidReadAccess
+			}
 		}
 		
 		return upToDateEvents

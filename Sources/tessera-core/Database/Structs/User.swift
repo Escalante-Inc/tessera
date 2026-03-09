@@ -2,6 +2,19 @@ import RAW
 import RAW_dh25519
 import nostr_kit_swift
 
+@RAW_staticbuff(bytes: 32)
+public struct UserAccessLevel: Sendable, NOSTR_tag_value {
+	public init(accessLevels: [UInt8]) {
+		var bitArray = [UInt8](repeating: 0, count: 32)
+		for level in accessLevels {
+			let byteIndex = Int(level) / 8
+			let bitIndex  = Int(level) % 8
+			bitArray[byteIndex] |= 1 << bitIndex
+		}
+		self.init(RAW_staticbuff: bitArray)
+	}
+}
+
 /// The basic Tessera user information.
 /// This is the content posted in a kind 0 (profile) note.
 public struct User: RAW_convertible, RAW_accessible {

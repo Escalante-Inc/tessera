@@ -6,6 +6,12 @@ import RAW_ed25519
 import NIO
 import nostr_kit_swift
 
+/// Creates a `NOSTR_kind` inside the range of the access level with a value of kind
+public func createKind(accessLevel: UInt8, kind:UInt32) -> NOSTR_kind {
+	let kind = kind % 40_000
+	return NOSTR_kind(RAW_native: (UInt32(accessLevel) + 1) * 40_000 + kind)
+}
+
 public func applyTesseraFilter<Content:NOSTR_event_content>(_ event: NOSTR_event_signed<UnsignedEvent<Content>>, filter: Filter) -> Bool {
 	var hasTags: Bool = true
 	tagLoop: for tag in filter.tags {

@@ -1,0 +1,15 @@
+# User Access Levels
+
+There are 256 access levels each with a range of eligible kinds.
+Access Level 0: [40_000, 79_999]
+Access Level 1: [80_000, 119_999]
+...
+Access Level 255: [10,240,000 , 10,279,999]
+
+# NOSTR Kinds
+
+Inside each 40_000 range of kinds per access level:
+- The first 10_000 (i.e. [0, 9_999]) represent non-replaceable events.
+- The second 10_000 (i.e. [10_000, 19_999]) represent replaceable events via the PK (publicKey, kind).
+- The third 10_000 (i.e. [20_000, 29_999]) represent ephemeral events.
+- The fourth 10_000 (i.e [30_000, 39_999]) represent replaceable events via the PK (publicKey, kind, d-tag).

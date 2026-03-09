@@ -24,6 +24,7 @@ public struct TesseraDB:Sendable {
 	internal let kindIndex:Database.DupSort<NOSTR_kind, NOSTR_id>
 	internal let dateIndex:Database.DupSort<NOSTR_date, NOSTR_id>
 	internal let tagIndex:Database.DupSort<EventTag, NOSTR_id>
+	internal let userIndex:Database.Strict<PublicKey, NOSTR_id>
 	
 	internal let replaceableEvents:Database.DupSort<ReplaceableKey, DatedID>
 	
@@ -55,7 +56,7 @@ public struct TesseraDB:Sendable {
 		log.logLevel = logLevel
 		self.log = log
 		log.debug("initializing tessera environment", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
-		env = try Environment(path:finalPath.path(), flags:[.noSubDir], mapSize:memoryMapSize, maxReaders:64, maxDBs:6, mode:[.ownerReadWriteExecute, .groupReadExecute, .otherReadExecute])
+		env = try Environment(path:finalPath.path(), flags:[.noSubDir], mapSize:memoryMapSize, maxReaders:64, maxDBs:7, mode:[.ownerReadWriteExecute, .groupReadExecute, .otherReadExecute])
 		log.trace("created tessera environment. now creating initial transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		let newTrans = try Transaction(env:env, readOnly:false)
 		log.trace("created initial transaction. now creating databases", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
@@ -64,6 +65,7 @@ public struct TesseraDB:Sendable {
 		kindIndex = try Database.DupSort<NOSTR_kind, NOSTR_id>(env:env, name:"KindIndex", flags:[.create], tx:newTrans)
 		dateIndex = try Database.DupSort<NOSTR_date, NOSTR_id>(env:env, name:"DateIndex", flags:[.create], tx:newTrans)
 		tagIndex = try Database.DupSort<EventTag, NOSTR_id>(env:env, name:"TagIndex", flags:[.create], tx:newTrans)
+		userIndex = try Database.Strict<PublicKey, NOSTR_id>(env:env, name:"UserIndex", flags:[.create], tx:newTrans)
 		replaceableEvents = try Database.DupSort<ReplaceableKey, DatedID>(env:env, name:"ReplaceableEvents", flags:[.create], tx:newTrans)
 		log.trace("created all databases. now committing transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		try newTrans.commit()
