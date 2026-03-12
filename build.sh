@@ -9,6 +9,6 @@ codesign --remove-signature .build/debug/tessera || true
 
 echo "Re-signing with entitlements..."
 codesign \
-  --entitlements Sources/SmartCard.entitlements \
+  --entitlements Sources/tessera/SmartCard.entitlements \
   -s - \
   .build/debug/tessera

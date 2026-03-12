@@ -58,6 +58,7 @@ extension TesseraDB {
 		
 		// Add Event to the indexes
 		try authorIndex.setEntry(key: signedEvent.unsignedEvent.publicKey, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
+		try applicationIndex.setEntry(key: signedEvent.unsignedEvent.application, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		try kindIndex.setEntry(key: signedEvent.unsignedEvent.kind, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		try dateIndex.setEntry(key: signedEvent.unsignedEvent.date, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		
@@ -113,6 +114,7 @@ extension TesseraDB {
 		
 		// Add Event to the indexes
 		try authorIndex.setEntry(key: signedEvent.unsignedEvent.publicKey, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
+		try applicationIndex.setEntry(key: signedEvent.unsignedEvent.application, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		try kindIndex.setEntry(key: signedEvent.unsignedEvent.kind, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		try dateIndex.setEntry(key: signedEvent.unsignedEvent.date, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		

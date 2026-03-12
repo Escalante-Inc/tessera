@@ -50,7 +50,8 @@ let package = Package(
 				.product(name:"wireguard-userspace-nio", package:"wireguard-swift"),
 				.product(name: "openpgp-kit", package: "openpgp-kit-swift"),
 				"tessera-core"
-			]
+			],
+			exclude: ["SmartCard.entitlements"]
 		),
 		.target(
 			name: "tessera-core",

@@ -31,6 +31,7 @@ extension TesseraDB {
 		for filter in filters {
 			var filterIds = Set<NOSTR_id>()
 			var ids:Set<NOSTR_id>! = nil
+			var applicationIds:Set<NOSTR_id>! = nil
 			var kindIds:Set<NOSTR_id>! = nil
 			var authorIds:Set<NOSTR_id>! = nil
 			var tagIds:Set<NOSTR_id>! = nil
@@ -67,6 +68,22 @@ extension TesseraDB {
 							kindIds.insert(id)
 							while let id = try? cursor.opNextDup() {
 								kindIds.insert(id)
+							}
+						}
+					} catch {}
+				}
+			}
+			
+			// Only one application in event, so multiple applications are OR'd (union)
+			if !filter.applications.isEmpty {
+				applicationIds = Set<NOSTR_id>()
+				for application in filter.applications {
+					do {
+						try applicationIndex.cursor(tx: tx) { cursor in
+							let id = try cursor.opSet(key: application)
+							applicationIds.insert(id)
+							while let id = try? cursor.opNextDup() {
+								applicationIds.insert(id)
 							}
 						}
 					} catch {}
@@ -137,7 +154,7 @@ extension TesseraDB {
 				}
 			}
 			
-			let sets: [Set<NOSTR_id>] = [ids, kindIds, authorIds, tagIds, dateIds].compactMap { $0 }
+			let sets: [Set<NOSTR_id>] = [ids, applicationIds, kindIds, authorIds, tagIds, dateIds].compactMap { $0 }
 			if let first = sets.first {
 				filterIds = first
 				for set in sets.dropFirst() {

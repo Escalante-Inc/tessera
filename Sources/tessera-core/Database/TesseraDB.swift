@@ -21,6 +21,7 @@ public struct TesseraDB:Sendable {
 	
 	// Indexes
 	internal let authorIndex:Database.DupSort<PublicKey, NOSTR_id>
+	internal let applicationIndex:Database.DupSort<NOSTR_application, NOSTR_id>
 	internal let kindIndex:Database.DupSort<NOSTR_kind, NOSTR_id>
 	internal let dateIndex:Database.DupSort<NOSTR_date, NOSTR_id>
 	internal let tagIndex:Database.DupSort<EventTag, NOSTR_id>
@@ -56,12 +57,13 @@ public struct TesseraDB:Sendable {
 		log.logLevel = logLevel
 		self.log = log
 		log.debug("initializing tessera environment", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
-		env = try Environment(path:finalPath.path(), flags:[.noSubDir], mapSize:memoryMapSize, maxReaders:64, maxDBs:7, mode:[.ownerReadWriteExecute, .groupReadExecute, .otherReadExecute])
+		env = try Environment(path:finalPath.path(), flags:[.noSubDir], mapSize:memoryMapSize, maxReaders:64, maxDBs:8, mode:[.ownerReadWriteExecute, .groupReadExecute, .otherReadExecute])
 		log.trace("created tessera environment. now creating initial transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		let newTrans = try Transaction(env:env, readOnly:false)
 		log.trace("created initial transaction. now creating databases", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		signedEvents = try Database.Strict<NOSTR_id, TesseraSignedEvent>(env:env, name:"SignedEvents", flags:[.create], tx:newTrans)
 		authorIndex = try Database.DupSort<PublicKey, NOSTR_id>(env:env, name:"AuthorIndex", flags:[.create], tx:newTrans)
+		applicationIndex = try Database.DupSort<NOSTR_application, NOSTR_id>(env:env, name:"ApplicationIndex", flags:[.create], tx:newTrans)
 		kindIndex = try Database.DupSort<NOSTR_kind, NOSTR_id>(env:env, name:"KindIndex", flags:[.create], tx:newTrans)
 		dateIndex = try Database.DupSort<NOSTR_date, NOSTR_id>(env:env, name:"DateIndex", flags:[.create], tx:newTrans)
 		tagIndex = try Database.DupSort<EventTag, NOSTR_id>(env:env, name:"TagIndex", flags:[.create], tx:newTrans)

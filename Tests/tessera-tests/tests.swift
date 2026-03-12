@@ -71,7 +71,7 @@ extension TesseraTests {
 				kind: 10000, content: ByteBuffer(string: "Alice Content")).sign(as: aliceEd25519PrivateKey)
 			bobSignedEvent = try UnsignedEvent(
 				publicKey: bobEd25519PublicKey, date: NOSTR_date(date: Date()),
-				tags: [EventTag(user: aliceEd25519PublicKey), EventTag(tagName: "b", tagValues: ["Bob Tag"]), EventTag(dTag: "testUniqueDTag")], application: 0,
+				tags: [EventTag(user: aliceEd25519PublicKey), EventTag(tagName: "b", tagValues: ["Bob Tag"]), EventTag(dTag: "testUniqueDTag")], application: 1,
 				kind: 30000, content: ByteBuffer(string: "Bob Content")).sign(as: bobEd25519PrivateKey)
 			adminSignedEvent = try UnsignedEvent(
 				publicKey: adminEd25519PublicKey, date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: 1, to: Date())!),
@@ -129,6 +129,16 @@ extension TesseraTests {
 			let bobPkFilter = Filter(authors: [bobEd25519PublicKey])
 			events = try tesseraDB.queryEventsBySmartFilter(filters: [alicePkFilter, bobPkFilter])
 			#expect(events.count == 4)
+		}
+		
+		@Test func smartFilterApplication() throws {
+			let kindFilterA = Filter(applications: [NOSTR_application(RAW_native: 0)])
+			var events = try tesseraDB.queryEventsBySmartFilter(filters: [kindFilterA])
+			#expect(events.count == 5)
+			
+			let kindFilterB = Filter(applications: [NOSTR_application(RAW_native: 0), NOSTR_application(RAW_native: 1)])
+			events = try tesseraDB.queryEventsBySmartFilter(filters: [kindFilterB])
+			#expect(events.count == 6)
 		}
 		
 		@Test func smartFilterKind() throws {

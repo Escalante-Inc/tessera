@@ -42,8 +42,8 @@ extension TesseraDB {
 		overwriteTags: [any NOSTR_tag]? = nil,
 		newContent: ByteBuffer? = nil)
 	{
-		var updatedEvents: [TesseraSignedEvent] = []
-		do {
+//		var updatedEvents: [TesseraSignedEvent] = []
+//		do {
 //			let newTrans = try Transaction(env:env, readOnly:false)
 //			try signedEvents.cursor(tx:newTrans) { cursor in
 //				let (_, signedEvent) = try cursor.opFirst()
@@ -60,9 +60,9 @@ extension TesseraDB {
 //				try signedEvents.setEntry(key: updatedEvent.unsignedEvent.id, value: updatedEvent, flags: [], tx: newTrans)
 //			}
 //			try newTrans.commit()
-		} catch let error {
-			log.error(Logger.Message.red("unable to force update events matching the filter"), metadata: ["error": "\(error)"])
-		}
-		log.info(Logger.Message.orange("successfully force updated \(updatedEvents.count) events matching the filter"))
+//		} catch let error {
+//			log.error(Logger.Message.red("unable to force update events matching the filter"), metadata: ["error": "\(error)"])
+//		}
+//		log.info(Logger.Message.orange("successfully force updated \(updatedEvents.count) events matching the filter"))
 	}
 }
