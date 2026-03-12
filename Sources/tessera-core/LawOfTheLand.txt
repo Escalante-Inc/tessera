@@ -10,6 +10,7 @@ Access Level 255: [10,240,000 , 10,279,999]
 
 Inside each 40_000 range of kinds per access level:
 - The first 10_000 (i.e. [0, 9_999]) represent non-replaceable events.
-- The second 10_000 (i.e. [10_000, 19_999]) represent replaceable events via the PK (publicKey, kind).
-- The third 10_000 (i.e. [20_000, 29_999]) represent ephemeral events.
-- The fourth 10_000 (i.e [30_000, 39_999]) represent replaceable events via the PK (publicKey, kind, d-tag).
+- The second 5_000 (i.e. [10_000, 14_999]) represent replaceable events via the PK (publicKey, kind).
+- The third 10_000 (i.e. [15_000, 24_999]) represent the replaceable events via the PK (kind, d-tag).
+- The fourth 10_000 (i.e. [25_000, 29_999]) represent ephemeral events.
+- The fifth 10_000 (i.e [30_000, 39_999]) represent replaceable events via the PK (publicKey, kind, d-tag).

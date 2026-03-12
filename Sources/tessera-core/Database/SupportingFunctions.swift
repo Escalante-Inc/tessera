@@ -89,7 +89,7 @@ internal func createNewUpdatedEvent<Content:NOSTR_event_content>(_ event: NOSTR_
 		}
 	}
 	eventTags.append(try createAuthorTag(author: event.unsignedEvent.publicKey))
-	let unsignedEvent = try UnsignedEvent(publicKey: event.unsignedEvent.publicKey, date: NOSTR_date(date: Date()), tags: eventTags, kind: event.unsignedEvent.kind, content: eventContent)
+	let unsignedEvent = try UnsignedEvent(publicKey: event.unsignedEvent.publicKey, date: NOSTR_date(date: Date()), tags: eventTags, application: NOSTR_application(RAW_native: 1), kind: event.unsignedEvent.kind, content: eventContent)
 	return try unsignedEvent.sign(as: adminSigningKey)
 }
 

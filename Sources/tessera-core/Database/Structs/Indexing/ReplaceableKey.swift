@@ -4,23 +4,52 @@ import RAW_dh25519
 import QuickLMDB
 import nostr_kit_swift
 
-internal struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_convertible {
-	let pubkey: PublicKey
+public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_convertible {
+	let pubkey: PublicKey?
 	let kind: NOSTR_kind
 	let dTag: (any NOSTR_tag_value)?
 	
-	init(pubkey: PublicKey, kind: NOSTR_kind, dTag: (any NOSTR_tag_value)?) {
+	public init(pubkey: PublicKey?, kind: NOSTR_kind, dTag: (any NOSTR_tag_value)?) {
 		self.pubkey = pubkey
 		self.kind = kind
 		self.dTag = dTag
 	}
 	
+	public init<ContentType: NOSTR_event_content>(event: UnsignedEvent<ContentType>) throws {
+		self.kind = event.kind
+		let kindInt = kind.RAW_native() % 40_000
+		if NostrKindCategory.replaceablePKKindDTag.range.contains(kindInt) {
+			guard let tag = event.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) else {
+				throw SignedNoteError.invalidParameterizedEvent
+			}
+			self.dTag = tag.NOSTR_tag_values.array.first!
+		} else {
+			self.dTag = nil
+		}
+
+		if NostrKindCategory.replaceablePKDTag.range.contains(kindInt) {
+			self.pubkey = nil
+		} else {
+			self.pubkey = event.publicKey
+		}
+	}
+	
 	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
-		guard count >= MemoryLayout<PublicKey>.size + MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size else { return nil }
-		self.pubkey = PublicKey(RAW_staticbuff_seeking: &inputPtr)
+		guard count > MemoryLayout<EncodedBool>.size else { return nil }
+		let pubKeyExists = EncodedBool(RAW_staticbuff_seeking: &inputPtr)
+		var dataCount = count - MemoryLayout<EncodedBool>.size
+		if pubKeyExists.bool {
+			guard count >= MemoryLayout<PublicKey>.size else { return nil }
+			self.pubkey = PublicKey(RAW_staticbuff_seeking: &inputPtr)
+			dataCount -= MemoryLayout<PublicKey>.size
+		} else {
+			self.pubkey = nil
+		}
+		
+		guard count >= MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size else { return nil }
 		self.kind = NOSTR_kind(RAW_staticbuff_seeking: &inputPtr)
 		let dTagExists = EncodedBool(RAW_staticbuff_seeking: &inputPtr)
-		var dataCount = count - MemoryLayout<PublicKey>.size + MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size
+		dataCount = count - MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size
 		
 		if dTagExists.bool {
 			let dTagLength = Int(Bytes2(RAW_staticbuff_seeking: &inputPtr).RAW_native())
@@ -35,7 +64,10 @@ internal struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_co
 	}
 	
 	public func RAW_encode(count: inout RAW.size_t) {
-		count += MemoryLayout<PublicKey>.size + MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size
+		count += MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size * 2
+		if pubkey != nil {
+			count += MemoryLayout<PublicKey>.size
+		}
 		if dTag != nil {
 			count += MemoryLayout<Bytes2>.size
 			dTag!.RAW_encode(count: &count)
@@ -43,8 +75,16 @@ internal struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_co
 	}
 	
 	public func RAW_encode(dest: UnsafeMutablePointer<UInt8>) -> UnsafeMutablePointer<UInt8> {
-		var dest = pubkey.RAW_encode(dest: dest)
+		var dest = dest
+		if pubkey != nil {
+			dest = EncodedBool(true).RAW_encode(dest: dest)
+			dest = pubkey!.RAW_encode(dest: dest)
+		} else {
+			dest = EncodedBool(false).RAW_encode(dest: dest)
+		}
+		
 		dest = kind.RAW_encode(dest: dest)
+		
 		if dTag != nil {
 			dest = EncodedBool(true).RAW_encode(dest: dest)
 			var dTagLength = 0; dTag!.RAW_encode(count: &dTagLength)
@@ -80,32 +120,33 @@ internal struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_co
 	   }
 	}
 	
-	static func == (lhs: Self, rhs: Self) -> Bool {
+	public static func == (lhs: Self, rhs: Self) -> Bool {
 		guard lhs.pubkey == rhs.pubkey,
 			  lhs.kind == rhs.kind else {
 			return false
 		}
+
 		switch (lhs.dTag, rhs.dTag) {
-			case (nil, nil):
-				return true
-			case (nil, _), (_, nil):
-				return false
-			case let (l?, r?):
-				var equal = true
-				l.RAW_access { lPtr in
-					r.RAW_access { rPtr in
-						if lPtr.count != rPtr.count {
-							equal = false
-							return
-						}
-						equal = lPtr.elementsEqual(rPtr)
+		case (nil, nil):
+			return true
+		case (nil, _), (_, nil):
+			return false
+		case let (l?, r?):
+			var equal = true
+			l.RAW_access { lPtr in
+				r.RAW_access { rPtr in
+					if lPtr.count != rPtr.count {
+						equal = false
+						return
 					}
+					equal = lPtr.elementsEqual(rPtr)
 				}
-				return equal
+			}
+			return equal
 		}
 	}
 
-	func hash(into hasher: inout Hasher) {
+	public func hash(into hasher: inout Hasher) {
 		hasher.combine(pubkey)
 		hasher.combine(kind)
 

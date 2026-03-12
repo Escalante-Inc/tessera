@@ -16,14 +16,6 @@ fileprivate func isNewer(_ lhs: TesseraSignedEvent, than rhs: TesseraSignedEvent
 	return l.id > r.id
 }
 
-internal func isReplaceableKind(_ kind: NOSTR_kind) -> Bool{
-	let kindInt = kind.RAW_native() % 40_000
-	return kindInt == 3 || (10_000...19_999).contains(kindInt) || (30_000...39_999).contains(kindInt)
-}
-internal func isParameterizedReplaceable(_ kind: NOSTR_kind) -> Bool {
-	return (30000...39999).contains(kind.RAW_native() % 40_000)
-}
-
 extension TesseraDB {
 	/// Returns the nostr event for the specified `NOSTR_id`
 	public func queryEventID(_ id: NOSTR_id) throws -> TesseraSignedEvent {
@@ -238,26 +230,15 @@ extension TesseraDB {
 		var upToDateEvents: [TesseraSignedEvent] = []
 		
 		for signedEvent in queriedEvents {
-			let unsigned = signedEvent.unsignedEvent
-			let kind = unsigned.kind
-			let pubkey = unsigned.publicKey
+			let unsignedEvent = signedEvent.unsignedEvent
+			let kindInt = unsignedEvent.kind.RAW_native() % 40_000
 			
-			if !isReplaceableKind(kind) {
+			if NostrKindCategory.nonReplaceable.range.contains(kindInt) {
 				upToDateEvents.append(signedEvent)
 				continue
 			}
 			
-			let dTag: (any NOSTR_tag_value)?
-			if isParameterizedReplaceable(kind) {
-				guard let tag = unsigned.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) else {
-					throw SignedNoteError.invalidParameterizedEvent
-				}
-				dTag = tag.NOSTR_tag_values.array.first!
-			} else {
-				dTag = nil
-			}
-			
-			let key = ReplaceableKey(pubkey: pubkey, kind: kind, dTag: dTag)
+			let key = try ReplaceableKey(event: unsignedEvent)
 			
 			try replaceableEvents.cursor(tx: newTrans) { cursor in
 				_ = try cursor.opSet(key: key)

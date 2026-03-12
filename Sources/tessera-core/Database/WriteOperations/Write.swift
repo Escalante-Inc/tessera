@@ -16,20 +16,17 @@ extension TesseraDB {
 		logger.logLevel = logLevel
 		
 		let kind = signedEvent.unsignedEvent.kind.RAW_native() % 40_000
-		guard (20_000...29_999).contains(kind) == false else {
+		guard NostrKindCategory.ephemeral.range.contains(kind) == false else {
 			throw SignedNoteError.cantStoreEphemeralEvent
-		}
-		var dTag:(any NOSTR_tag_value)? = nil
-		if (30000...39999).contains(kind) {
-			guard let tag = signedEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) else {
-				throw SignedNoteError.invalidParameterizedEvent
-			}
-			dTag = tag.NOSTR_tag_values.array.first!
 		}
 		
 		let newTrans = try Transaction(env:env, readOnly:false)
-		if try checkWriteAccess(user: signedEvent.unsignedEvent.publicKey, kind: signedEvent.unsignedEvent.kind, tx: newTrans) == false {
-			throw AccessLevelError.invalidWriteAccess
+		do {
+			if try checkWriteAccess(user: signedEvent.unsignedEvent.publicKey, kind: signedEvent.unsignedEvent.kind, tx: newTrans) == false {
+				throw AccessLevelError.invalidWriteAccess
+			}
+		} catch LMDBError.notFound {
+			throw AccessLevelError.userDoesNotExist
 		}
 
 		// Create Event in the Main DB
@@ -73,8 +70,8 @@ extension TesseraDB {
 			try tagIndex.setEntry(key: dbTag as! EventTag, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		}
 		
-		if isReplaceableKind(signedEvent.unsignedEvent.kind) {
-			let replaceableKey = ReplaceableKey(pubkey: signedEvent.unsignedEvent.publicKey, kind: signedEvent.unsignedEvent.kind, dTag: dTag)
+		if !NostrKindCategory.nonReplaceable.range.contains(kind) {
+			let replaceableKey = try ReplaceableKey(event: signedEvent.unsignedEvent)
 			let datedId = DatedID(date: signedEvent.unsignedEvent.date, id: signedEvent.unsignedEvent.id)
 			
 			try replaceableEvents.setEntry(key: replaceableKey, value: datedId, flags: [], tx: newTrans)

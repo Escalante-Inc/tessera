@@ -35,7 +35,8 @@ extension TesseraDB {
 				try tagIndex.deleteEntry(key: dbTag as! EventTag, value: deletedEvent.unsignedEvent.id, tx: newTrans)
 			}
 			
-			if isReplaceableKind(deletedEvent.unsignedEvent.kind) {
+			let kindInt = deletedEvent.unsignedEvent.kind.RAW_native() % 40_000
+			if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
 				var dTag:(any NOSTR_tag_value)? = nil
 				if let tag = deletedEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) {
 					dTag = tag.NOSTR_tag_values.array.first!
@@ -83,7 +84,8 @@ extension TesseraDB {
 					try tagIndex.deleteEntry(key: dbTag as! EventTag, value: deletedEvent.unsignedEvent.id, tx: newTrans)
 				}
 				
-				if isReplaceableKind(deletedEvent.unsignedEvent.kind) {
+				let kindInt = deletedEvent.unsignedEvent.kind.RAW_native() % 40_000
+				if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
 					var dTag:(any NOSTR_tag_value)? = nil
 					if let tag = deletedEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) {
 						dTag = tag.NOSTR_tag_values.array.first!

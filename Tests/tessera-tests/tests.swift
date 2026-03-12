@@ -58,25 +58,25 @@ extension TesseraTests {
 			(adminEd25519PublicKey, adminEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: adminPrivateKey)
 			self.tesseraDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
 			
-			aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [1])])], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
-			bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,2])])], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
-			adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])])], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
+			aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [1])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
+			bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,2])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
+			adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
 			try tesseraDB.scribeNewUser(signedEvent: aliceProfileEvent, logLevel: .info)
 			try tesseraDB.scribeNewUser(signedEvent: bobProfileEvent, logLevel: .info)
 			try tesseraDB.scribeNewUser(signedEvent: adminProfileEvent, logLevel: .info)
 			
 			aliceSignedEvent = try UnsignedEvent(
 				publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -1, to: Date())!),
-				tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Alice Tag"])],
-				kind: NOSTR_kind(RAW_native: 10000), content: ByteBuffer(string: "Alice Content")).sign(as: aliceEd25519PrivateKey)
+				tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Alice Tag"])], application: 0,
+				kind: 10000, content: ByteBuffer(string: "Alice Content")).sign(as: aliceEd25519PrivateKey)
 			bobSignedEvent = try UnsignedEvent(
 				publicKey: bobEd25519PublicKey, date: NOSTR_date(date: Date()),
-				tags: [EventTag(user: aliceEd25519PublicKey), EventTag(tagName: "b", tagValues: ["Bob Tag"]), EventTag(dTag: "testUniqueDTag")],
-				kind: NOSTR_kind(RAW_native: 30000), content: ByteBuffer(string: "Bob Content")).sign(as: bobEd25519PrivateKey)
+				tags: [EventTag(user: aliceEd25519PublicKey), EventTag(tagName: "b", tagValues: ["Bob Tag"]), EventTag(dTag: "testUniqueDTag")], application: 0,
+				kind: 30000, content: ByteBuffer(string: "Bob Content")).sign(as: bobEd25519PrivateKey)
 			adminSignedEvent = try UnsignedEvent(
 				publicKey: adminEd25519PublicKey, date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: 1, to: Date())!),
-				tags: [EventTag(user: aliceEd25519PublicKey), EventTag(user: bobEd25519PublicKey), EventTag(tagName: "ad", tagValues: ["Admin Tag"])],
-				kind: NOSTR_kind(RAW_native: 10000), content: ByteBuffer(string: "Admin Content")).sign(as: adminEd25519PrivateKey)
+				tags: [EventTag(user: aliceEd25519PublicKey), EventTag(user: bobEd25519PublicKey), EventTag(tagName: "ad", tagValues: ["Admin Tag"])], application: 0,
+				kind: 10000, content: ByteBuffer(string: "Admin Content")).sign(as: adminEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: aliceSignedEvent, logLevel: .info)
 			try tesseraDB.scribeNewEvent(signedEvent: bobSignedEvent, logLevel: .info)
 			try tesseraDB.scribeNewEvent(signedEvent: adminSignedEvent, logLevel: .info)
@@ -91,16 +91,16 @@ extension TesseraTests {
 		}
 		
 		@Test func writeDeletionEvent() throws {
-			let validDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id)], kind: NOSTR_kind(RAW_native: 5), content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
+			let validDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: validDeletionEvent, logLevel: .trace)
 			#expect(tesseraDB.eventCount == 7)
 			
-			let invalidKeyDeletionEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id)], kind: NOSTR_kind(RAW_native: 5), content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
+			let invalidKeyDeletionEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
 			#expect(throws: SignedNoteError.invalidKind5PublicKey) {
 				try tesseraDB.scribeNewEvent(signedEvent: invalidKeyDeletionEvent, logLevel: .trace)
 			}
 			
-			let invalidTagDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: invalidKeyDeletionEvent.unsignedEvent.id)], kind: NOSTR_kind(RAW_native: 5), content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
+			let invalidTagDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: invalidKeyDeletionEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
 			#expect(throws: SignedNoteError.invalidKind5Tag) {
 				try tesseraDB.scribeNewEvent(signedEvent: invalidTagDeletionEvent, logLevel: .trace)
 			}
@@ -205,8 +205,8 @@ extension TesseraTests {
 		
 		@Test func smartFilterWithUpdates() throws {
 			let updatedEvent = try UnsignedEvent( publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: Date()),
-				tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["New Alice Tag"])],
-				kind: NOSTR_kind(RAW_native: 10000), content: ByteBuffer(string: "New Alice Content")).sign(as: aliceEd25519PrivateKey)
+												  tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["New Alice Tag"])], application: 0,
+				kind: 10000, content: ByteBuffer(string: "New Alice Content")).sign(as: aliceEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: updatedEvent, logLevel: .trace)
 			let filter = Filter(authors: [aliceEd25519PublicKey], tags:[EventTag(user: bobEd25519PublicKey)])
 			var events = try tesseraDB.queryEventsBySmartFilter(filters: [filter])
@@ -214,8 +214,8 @@ extension TesseraTests {
 			#expect(events[0].unsignedEvent.content == ByteBuffer(string: "New Alice Content"))
 			
 			let updatedEvent2 = try UnsignedEvent( publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: Date()),
-				tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Newer Alice Tag"])],
-				kind: NOSTR_kind(RAW_native: 10000), content: ByteBuffer(string: "Newer Alice Content")).sign(as: aliceEd25519PrivateKey)
+												   tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Newer Alice Tag"])], application: 0,
+				kind: 10000, content: ByteBuffer(string: "Newer Alice Content")).sign(as: aliceEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: updatedEvent2, logLevel: .trace)
 			events = try tesseraDB.queryEventsBySmartFilter(filters: [filter])
 			#expect(events.count == 1)
@@ -223,8 +223,8 @@ extension TesseraTests {
 		}
 		
 		@Test func smartFilterWithDeletions() throws {
-			let aliceDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id), EventTag(eventID: aliceProfileEvent.unsignedEvent.id)], kind: NOSTR_kind(RAW_native: 5), content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
-			let bobDeletionEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(eventID: bobSignedEvent.unsignedEvent.id)], kind: NOSTR_kind(RAW_native: 5), content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
+			let aliceDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id), EventTag(eventID: aliceProfileEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
+			let bobDeletionEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(eventID: bobSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: aliceDeletionEvent, logLevel: .trace)
 			try tesseraDB.scribeNewEvent(signedEvent: bobDeletionEvent, logLevel: .trace)
 			#expect(tesseraDB.eventCount == 8)
@@ -247,16 +247,16 @@ extension TesseraTests {
 		}
 		
 		@Test func testWritePermissions() throws {
-			let aliceWriteAccessOne = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [], kind: createKind(accessLevel: 0, kind: 10_000), content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
+			let aliceWriteAccessOne = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 0, kind: 10_000), content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
 			#expect(throws: AccessLevelError.invalidWriteAccess) {
 				try tesseraDB.scribeNewEvent(signedEvent: aliceWriteAccessOne, logLevel: .trace)
 			}
-			let aliceWriteAccessTwo = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [], kind: createKind(accessLevel: 1, kind: 10_000), content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
+			let aliceWriteAccessTwo = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 1, kind: 10_000), content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: aliceWriteAccessTwo, logLevel: .trace)
 			
-			let adminWriteAccessZero = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], kind: createKind(accessLevel: 0, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
-			let adminWriteAccess255 = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], kind: createKind(accessLevel: 255, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
-			let adminWriteAccessMax = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], kind: 11_000_000, content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
+			let adminWriteAccessZero = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 0, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
+			let adminWriteAccess255 = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 255, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
+			let adminWriteAccessMax = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], application: 0, kind: 11_000_000, content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: adminWriteAccessZero, logLevel: .trace)
 			try tesseraDB.scribeNewEvent(signedEvent: adminWriteAccess255, logLevel: .trace)
 			#expect(throws: AccessLevelError.invalidWriteAccess) {
@@ -265,9 +265,9 @@ extension TesseraTests {
 		}
 		
 		@Test func testReadPermissions() throws {
-			let adminWriteAccessZero = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], kind: createKind(accessLevel: 0, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
-			let adminWriteAccessOne = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], kind: createKind(accessLevel: 1, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
-			let adminWriteAccessTwo = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], kind: createKind(accessLevel: 2, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
+			let adminWriteAccessZero = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 0, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
+			let adminWriteAccessOne = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 1, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
+			let adminWriteAccessTwo = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 2, kind: 10_000), content: ByteBuffer()).sign(as: adminEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: adminWriteAccessZero, logLevel: .trace)
 			try tesseraDB.scribeNewEvent(signedEvent: adminWriteAccessOne, logLevel: .trace)
 			try tesseraDB.scribeNewEvent(signedEvent: adminWriteAccessTwo, logLevel: .trace)
@@ -278,8 +278,8 @@ extension TesseraTests {
 			}
 			_ = try tesseraDB.queryEventsBySmartFilter(filters: [filter], user: adminEd25519PublicKey)
 			
-			let bobWriteAccessZero = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [], kind: createKind(accessLevel: 0, kind: 10_000), content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
-			let bobWriteAccessTwo = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [], kind: createKind(accessLevel: 2, kind: 10_000), content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
+			let bobWriteAccessZero = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 0, kind: 10_000), content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
+			let bobWriteAccessTwo = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [], application: NOSTR_application(RAW_native: 0), kind: createKind(accessLevel: 2, kind: 10_000), content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: bobWriteAccessZero, logLevel: .trace)
 			try tesseraDB.scribeNewEvent(signedEvent: bobWriteAccessTwo, logLevel: .trace)
 			filter = Filter(authors: [bobEd25519PublicKey])
@@ -327,9 +327,9 @@ extension TesseraTests {
 		}
 		
 		@Test func fillDatabaseWithData() throws {
-			let aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [1])])], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
-			let bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,2])])], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
-			let adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])])], kind: NOSTR_kind(RAW_native: 0), content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
+			let aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [1])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
+			let bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,2])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
+			let adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
 			try tesseraDB.scribeNewUser(signedEvent: aliceProfileEvent, logLevel: .info)
 			try tesseraDB.scribeNewUser(signedEvent: bobProfileEvent, logLevel: .info)
 			try tesseraDB.scribeNewUser(signedEvent: adminProfileEvent, logLevel: .info)
@@ -339,14 +339,15 @@ extension TesseraTests {
 			
 			for _ in 0..<50_000 {
 				let author = authors.randomElement()!
-				let kind = Int.random(in: [10_000...19_999, 30_000...39_999].randomElement()!)
+				let kind = UInt32.random(in: [10_000...24_999, 30_000...39_999].randomElement()!)
+				let application = UInt16.random(in: UInt16.min...UInt16.max)
 				let signedEvent = try UnsignedEvent(
 					publicKey: author.0,
 					date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: Int.random(in: -365...365), to: Date())!),
 					tags: [EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!]),
-						   kind > 20_000 ? EventTag(tagName: "d", tagValues: [tagValues.randomElement()!]) :
-							EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!])],
-					kind: NOSTR_kind(RAW_native: UInt32(kind)),
+						   kind > 14_999 ? EventTag(tagName: "d", tagValues: [tagValues.randomElement()!]) :
+							EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!])], application: application,
+					kind: kind,
 					content: ByteBuffer(string: "")).sign(as: author.1)
 				try tesseraDB.scribeNewEvent(signedEvent: signedEvent, logLevel: .warning)
 			}
@@ -415,6 +416,24 @@ extension TesseraTests {
 				#expect(ptr.count == buffer.count)
 				#expect(memcmp(ptr.baseAddress!, buffer.baseAddress!, buffer.count) == 0)
 			}
+		}
+		
+		@Test func encodeDecodeReplaceableKey() {
+			var replaceableKey = ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: nil)
+			var replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
+			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
+			defer { pointer.deallocate() }
+			_ = replaceableKey.RAW_encode(dest:pointer.baseAddress!)
+			var decodedReplaceableKey = ReplaceableKey(RAW_decode: pointer.baseAddress!, count: replaceableKeyLen)!
+			#expect(replaceableKey == decodedReplaceableKey)
+			
+			replaceableKey = ReplaceableKey(pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey), kind: NOSTR_kind(RAW_native: 100), dTag: nil)
+			replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
+			let pointer2 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
+			defer { pointer2.deallocate() }
+			_ = replaceableKey.RAW_encode(dest:pointer2.baseAddress!)
+			decodedReplaceableKey = ReplaceableKey(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
+			#expect(replaceableKey == decodedReplaceableKey)
 		}
 	}
 }

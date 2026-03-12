@@ -19,7 +19,7 @@ final actor NostrRequestsStore {
 		nostrRequests[key]
 	}
 	func set(_ value: NOSTR_message_REQ, for key: PublicKey) {
-		if nostrRequests[key] != nil {
+		if nostrRequests[key] == nil {
 			nostrRequests[key] = [value]
 		} else {
 			nostrRequests[key]?.append(value)
@@ -27,6 +27,9 @@ final actor NostrRequestsStore {
 	}
 	func remove(_ key: PublicKey, subscriptionID: NOSTR_subscription_ID) {
 		nostrRequests[key]?.removeAll(where: { $0.subscriptionID == subscriptionID })
+		if nostrRequests[key]?.count == 0 {
+			nostrRequests.removeValue(forKey: key)
+		}
 	}
 	func removeAll() {
 		nostrRequests.removeAll()
@@ -104,100 +107,111 @@ final class TesseraService: Service {
 				for peerInfo in peerInfos {
 					foo.addTask {
 						var buffer = ByteBufferAllocator().buffer(capacity: 1024)
-						let iterator = peerInfo.inboundData?.makeAsyncConsumer()
-						while !Task.isCancelled {
-							if let incomingSignal = try await iterator?.next(whenTaskCancelled: .finish) {
-								
-								// Try to decode the incoming Wireguard data.
-								// Try deciding as every different possible Nostr message type.
-								//
-								// SeeAlso: [https://github.com/bwyma1/nostr-kit-swift/blob/main/Sources/nostr-kit-swift/Message/NOSTR_message.swift]
-								cliLogger.debug("Received incoming data. Checking for NOSTR messages.")
-								var message:NOSTR_message<UnsignedEvent<ByteBuffer>>?
-								incomingSignal.withUnsafeReadableBytes { ptr in
-									// Try EVENT Message
-									do {
-										guard let event = NOSTR_message_EVENT<UnsignedEvent<ByteBuffer>>(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
-											throw NOSTR_message_error.badDecode
-										}
-										message = .EVENT(event)
-									} catch { }
-									// Try REQ Message
-									do {
-										guard let request = NOSTR_message_REQ(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
-											throw NOSTR_message_error.badDecode
-										}
-										message = .REQ(request)
-									} catch { }
-									// Try CLOSE Message
-									do {
-										guard let close = NOSTR_message_CLOSE(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
-											throw NOSTR_message_error.badDecode
-										}
-										message = .CLOSE(close)
-									} catch { }
+						
+						func writeToInterface(data: any RAW_convertible) throws {
+							var messageLength = 0; data.RAW_encode(count: &messageLength)
+							buffer.withUnsafeMutableWritableBytes { ptr in
+								guard let base = ptr.baseAddress else { return }
+								let ptr = base.assumingMemoryBound(to: UInt8.self)
+								_ = data.RAW_encode(dest: ptr)
+							}
+							buffer.moveWriterIndex(forwardBy: messageLength)
+							try WGInterface<KCPChannels>.write(channel: channel, publicKey: peerInfo.publicKey, data: buffer)
+							buffer.clear(minimumCapacity: 1024)
+						}
+						
+						do {
+							let iterator = peerInfo.inboundData?.makeAsyncConsumer()
+							while !Task.isCancelled {
+								if let incomingSignal = try await iterator?.next(whenTaskCancelled: .finish) {
 									
-								}
-								switch message {
-									case .REQ(let request):
-										cliLogger.debug("Processing REQ Message")
-										
-										await nostrRequests.set(request, for: request.user)
-
-										let signedEvents:[TesseraSignedEvent] = try tesseraDB.queryEventsBySmartFilter(filters: request.filters, user: request.user)
-										
-										cliLogger.debug("Found \(signedEvents.count) events from REQ Message")
-										for event in signedEvents {
-											let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
-											var messageLength = 0; outgoingEventMessage.RAW_encode(count: &messageLength)
-											buffer.withUnsafeMutableWritableBytes { ptr in
-												guard let base = ptr.baseAddress else { return }
-												let ptr = base.assumingMemoryBound(to: UInt8.self)
-												_ = outgoingEventMessage.RAW_encode(dest: ptr)
+									// Try to decode the incoming Wireguard data.
+									// Try deciding as every different possible Nostr message type.
+									//
+									// SeeAlso: [https://github.com/bwyma1/nostr-kit-swift/blob/main/Sources/nostr-kit-swift/Message/NOSTR_message.swift]
+									cliLogger.debug("Received incoming data. Checking for NOSTR messages.")
+									var message:NOSTR_message<UnsignedEvent<ByteBuffer>>?
+									incomingSignal.withUnsafeReadableBytes { ptr in
+										// Try EVENT Message
+										do {
+											guard let event = NOSTR_message_EVENT<UnsignedEvent<ByteBuffer>>(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
+												throw NOSTR_message_error.badDecode
 											}
-											buffer.moveWriterIndex(forwardBy: messageLength)
-											try WGInterface<KCPChannels>.write(channel: channel, publicKey: peerInfo.publicKey, data: buffer)
-											buffer.clear(minimumCapacity: 1024)
-										}
+											message = .EVENT(event)
+										} catch { }
+										// Try REQ Message
+										do {
+											guard let request = NOSTR_message_REQ(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
+												throw NOSTR_message_error.badDecode
+											}
+											message = .REQ(request)
+										} catch { }
+										// Try CLOSE Message
+										do {
+											guard let close = NOSTR_message_CLOSE(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
+												throw NOSTR_message_error.badDecode
+											}
+											message = .CLOSE(close)
+										} catch { }
 										
-									case .EVENT(let incomingEventMessage):
-										cliLogger.debug("Processing EVENT Message")
-										let event = incomingEventMessage.event
-										guard event.isValidSignature() else {
-											break
-										}
-										try tesseraDB.scribeNewEvent(signedEvent: event, logLevel: cliLogger.logLevel)
-										
-										let allRequests = await nostrRequests.all()
-										for (key, requests) in allRequests {
-											for request in requests {
-												// If the event matches any current filters, then send it over.
-												// The event is sent as a nostr message with the same subscription id as the filter request.
-												if(eventMatchesFilters(event, filters: request.filters, logLevel: cliLogger.logLevel)) {
-													let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
-													var messageLength = 0; outgoingEventMessage.RAW_encode(count: &messageLength)
-													buffer.withUnsafeMutableWritableBytes { ptr in
-														guard let base = ptr.baseAddress else { return }
-														let ptr = base.assumingMemoryBound(to: UInt8.self)
-														_ = outgoingEventMessage.RAW_encode(dest: ptr)
+									}
+									switch message {
+										case .REQ(let request):
+											cliLogger.debug("Processing REQ Message")
+											
+											await nostrRequests.set(request, for: peerInfo.publicKey)
+											
+											let signedEvents:[TesseraSignedEvent] = try tesseraDB.queryEventsBySmartFilter(filters: request.filters, user: request.user)
+											
+											cliLogger.debug("Found \(signedEvents.count) events from REQ Message")
+											for event in signedEvents {
+												let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
+												try writeToInterface(data: outgoingEventMessage)
+											}
+											
+											let eoseMsg = NOSTR_message_EOSE(subscriptionID: request.subscriptionID)
+											try writeToInterface(data: eoseMsg)
+											
+										case .EVENT(let incomingEventMessage):
+											cliLogger.debug("Processing EVENT Message")
+											let event = incomingEventMessage.event
+											guard event.isValidSignature() else {
+												break
+											}
+											
+											do {
+												try tesseraDB.scribeNewEvent(signedEvent: event, logLevel: cliLogger.logLevel)
+											} catch AccessLevelError.invalidWriteAccess {
+												try writeToInterface(data: NOSTR_message_NOTICE(noticeText: "User lacks write access credentials"))
+											}
+											
+											let allRequests = await nostrRequests.all()
+											for (_, requests) in allRequests {
+												for request in requests {
+													cliLogger.debug("Checking if request filter matches message")
+													// If the event matches any current filters, then send it over.
+													// The event is sent as a nostr message with the same subscription id as the filter request.
+													if(eventMatchesFilters(event, filters: request.filters, logLevel: cliLogger.logLevel)) {
+														cliLogger.debug("Request filter matched, sending newly written event")
+														let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
+														try writeToInterface(data: outgoingEventMessage)
 													}
-													buffer.moveWriterIndex(forwardBy: messageLength)
-													try WGInterface<KCPChannels>.write(channel: channel, publicKey: key, data: buffer)
-													buffer.clear(minimumCapacity: 1024)
 												}
 											}
-										}
-									case .CLOSE(let closeMessage):
-										cliLogger.debug("Processing CLOSE Message")
-										await nostrRequests.remove(peerInfo.publicKey, subscriptionID: closeMessage.subscriptionID)
-									case nil:
-										cliLogger.debug("Incoming data didn't match any NOSTR Message type. Ignoring.")
-										break
-									default:
-										break
-										// need to add other messages
+										case .CLOSE(let closeMessage):
+											cliLogger.debug("Processing CLOSE Message")
+											await nostrRequests.remove(peerInfo.publicKey, subscriptionID: closeMessage.subscriptionID)
+										case nil:
+											cliLogger.debug("Incoming data didn't match any NOSTR Message type. Ignoring.")
+											break
+										default:
+											break
+											// need to add other messages
+									}
 								}
 							}
+						} catch let error {
+							try writeToInterface(data: NOSTR_message_NOTICE(noticeText: "\(error)"))
 						}
 					}
 				}

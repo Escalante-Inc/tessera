@@ -83,7 +83,7 @@ struct CLI:AsyncParsableCommand {
 			try await openPGPConnection.startOpenPGP()
 			let publicKey = try await openPGPConnection.getPublicKeys().first!
 			
-			let unsignedEvent = try UnsignedEvent(publicKey: publicKey, tags: [EventTag(accessLevel: index), EventTag(accessLevel: name)], kind: NOSTR_kind(RAW_native: 1), content: ByteBuffer())
+			let unsignedEvent = try UnsignedEvent(publicKey: publicKey, tags: [EventTag(accessLevel: index), EventTag(accessLevel: name)], application: 0, kind: 1, content: ByteBuffer())
 			try await openPGPConnection.openVerifyAccess(pwType: .user, password: "123456".data(using: .utf8)!)
 			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: unsignedEvent.id)
 			try await openPGPConnection.closeVerifyAccess(pwType: .user)
@@ -104,10 +104,10 @@ struct CLI:AsyncParsableCommand {
 		var databasePath:bedrock.Path = CLI.defaultDBBasePath()
 		
 		@Option(help:"The users read permissions.")
-		var readPermissions: [String]
+		var readPermissions: [String] = []
 		
 		@Option(help:"The users write permissions.")
-		var writePermissions: [String]
+		var writePermissions: [String] = []
 		
 		@Argument(help:"The users name.")
 		var userName:String
@@ -131,7 +131,8 @@ struct CLI:AsyncParsableCommand {
 											  tags: [EventTag(tagName: "userName", tagValues: [userName]),
 													 EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: readPermNumbers)]),
 													 EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: writePermNumbers)])],
-											  kind: NOSTR_kind(RAW_native: 0),
+											  application: 0,
+											  kind: 0,
 											  content: ByteBuffer())
 			try await openPGPConnection.openVerifyAccess(pwType: .user, password: "123456".data(using: .utf8)!)
 			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: userEvent.id)
@@ -139,7 +140,7 @@ struct CLI:AsyncParsableCommand {
 			try sig.withUnsafeBytes { ptr in
 				let nostrSig = NOSTR_sig(RAW_staticbuff: ptr.baseAddress!)
 				let signedEvent = NOSTR_event_signed(unsignedEvent: userEvent, sig: nostrSig)
-				try tesseraDB.scribeNewEvent(signedEvent: signedEvent, logLevel: .debug)
+				try tesseraDB.scribeNewUser(signedEvent: signedEvent, logLevel: .debug)
 			}
 		}
 	}
