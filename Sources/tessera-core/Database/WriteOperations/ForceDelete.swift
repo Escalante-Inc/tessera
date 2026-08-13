@@ -27,20 +27,19 @@ extension TesseraDB {
 			
 			
 			for tag in deletedEvent.unsignedEvent.tags.array {
-				var dbTag = tag
-				// Tags are indexed on their name and only the first item in the values array
-				if tag.NOSTR_tag_values.array.count > 1 {
-					dbTag.NOSTR_tag_values.array = [dbTag.NOSTR_tag_values.array.first!]
-				}
-				try tagIndex.deleteEntry(key: dbTag as! EventTag, value: deletedEvent.unsignedEvent.id, tx: newTrans)
+				guard let dbTag = tag.unwrap(as: EventTag.self) else { continue }
+				try tagIndex.deleteEntry(key: dbTag, value: deletedEvent.unsignedEvent.id, tx: newTrans)
 			}
 			
 			let kindInt = deletedEvent.unsignedEvent.kind.RAW_native() % 40_000
 			if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
-				var dTag:(any NOSTR_tag_value)? = nil
-				if let tag = deletedEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) {
-					dTag = tag.NOSTR_tag_values.array.first!
+				var dTag:DTag? = nil
+				for tag in deletedEvent.unsignedEvent.tags.array {
+					guard let t = tag.unwrap(as: DTag.self) else { continue }
+					dTag = t
+					break
 				}
+				
 				let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
 				let datedId = DatedID(date: deletedEvent.unsignedEvent.date, id: deletedEvent.unsignedEvent.id)
 				
@@ -76,20 +75,19 @@ extension TesseraDB {
 				
 				
 				for tag in deletedEvent.unsignedEvent.tags.array {
-					var dbTag = tag
-					// Tags are indexed on their name and only the first item in the values array
-					if tag.NOSTR_tag_values.array.count > 1 {
-						dbTag.NOSTR_tag_values.array = [dbTag.NOSTR_tag_values.array.first!]
-					}
-					try tagIndex.deleteEntry(key: dbTag as! EventTag, value: deletedEvent.unsignedEvent.id, tx: newTrans)
+					guard let dbTag = tag.unwrap(as: EventTag.self) else { continue }
+					try tagIndex.deleteEntry(key: dbTag, value: deletedEvent.unsignedEvent.id, tx: newTrans)
 				}
 				
 				let kindInt = deletedEvent.unsignedEvent.kind.RAW_native() % 40_000
 				if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
-					var dTag:(any NOSTR_tag_value)? = nil
-					if let tag = deletedEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "d") }) {
-						dTag = tag.NOSTR_tag_values.array.first!
+					var dTag:DTag? = nil
+					for tag in deletedEvent.unsignedEvent.tags.array {
+						guard let t = tag.unwrap(as: DTag.self) else { continue }
+						dTag = t
+						break
 					}
+					
 					let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
 					let datedId = DatedID(date: deletedEvent.unsignedEvent.date, id: deletedEvent.unsignedEvent.id)
 					

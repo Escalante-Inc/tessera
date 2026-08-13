@@ -119,10 +119,9 @@ final class TesseraService: Service {
 							try WGInterface<KCPChannels>.write(channel: channel, publicKey: peerInfo.publicKey, data: buffer)
 							buffer.clear(minimumCapacity: 1024)
 						}
-						
-						do {
-							let iterator = peerInfo.inboundData?.makeAsyncConsumer()
-							while !Task.isCancelled {
+						let iterator = peerInfo.inboundData?.makeAsyncConsumer()
+						while !Task.isCancelled {
+							do {
 								if let incomingSignal = try await iterator?.next(whenTaskCancelled: .finish) {
 									
 									// Try to decode the incoming Wireguard data.
@@ -161,7 +160,12 @@ final class TesseraService: Service {
 											
 											await nostrRequests.set(request, for: peerInfo.publicKey)
 											
-											let signedEvents:[TesseraSignedEvent] = try tesseraDB.queryEventsBySmartFilter(filters: request.filters, user: request.user)
+											let signedEvents: [TesseraSignedEvent]
+											if request.fetchHistory.bool {
+												signedEvents = try tesseraDB.queryEventsByDumbFilter(filters: request.filters, user: request.user)
+											} else {
+												signedEvents = try tesseraDB.queryEventsBySmartFilter(filters: request.filters, user: request.user)
+											}
 											
 											cliLogger.debug("Found \(signedEvents.count) events from REQ Message")
 											for event in signedEvents {
@@ -185,16 +189,22 @@ final class TesseraService: Service {
 												try writeToInterface(data: NOSTR_message_NOTICE(noticeText: "User lacks write access credentials"))
 											}
 											
-											let allRequests = await nostrRequests.all()
-											for (_, requests) in allRequests {
-												for request in requests {
-													cliLogger.debug("Checking if request filter matches message")
-													// If the event matches any current filters, then send it over.
-													// The event is sent as a nostr message with the same subscription id as the filter request.
-													if(eventMatchesFilters(event, filters: request.filters, logLevel: cliLogger.logLevel)) {
-														cliLogger.debug("Request filter matched, sending newly written event")
-														let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
-														try writeToInterface(data: outgoingEventMessage)
+											if event.unsignedEvent.kind.RAW_native() == 5 {
+												cliLogger.debug("Deletion event, sending newly written event")
+												let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: "", event: event)
+												try writeToInterface(data: outgoingEventMessage)
+											} else {
+												let allRequests = await nostrRequests.all()
+												for (_, requests) in allRequests {
+													for request in requests {
+														cliLogger.debug("Checking if request filter matches message")
+														// If the event matches any current filters, then send it over.
+														// The event is sent as a nostr message with the same subscription id as the filter request.
+														if(eventMatchesFilters(event, filters: request.filters, logLevel: cliLogger.logLevel)) {
+															cliLogger.debug("Request filter matched, sending newly written event")
+															let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
+															try writeToInterface(data: outgoingEventMessage)
+														}
 													}
 												}
 											}
@@ -210,8 +220,9 @@ final class TesseraService: Service {
 									}
 								}
 							}
-						} catch let error {
-							try writeToInterface(data: NOSTR_message_NOTICE(noticeText: "\(error)"))
+							catch let error {
+								try writeToInterface(data: NOSTR_message_NOTICE(noticeText: "\(error)"))
+							}
 						}
 					}
 				}

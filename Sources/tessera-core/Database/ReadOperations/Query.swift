@@ -176,10 +176,38 @@ extension TesseraDB {
 	/// Uses a 'dumb' filter. Ignores deletions or updates on events.
 	public func queryEventsByDumbFilter(filters:[Filter], user: PublicKey? = nil) throws -> [TesseraSignedEvent] {
 		let newTrans = try Transaction(env:env, readOnly:true)
-		let (allFilterIds, _) = try getFilterEligibleIds(filters: filters, tx: newTrans)
+		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters, tx: newTrans)
 		guard !allFilterIds.isEmpty else {
 			return []
 		}
+		// Removing ids for deleted events
+		do {
+			var kind5Ids = Set<NOSTR_id>()
+			try kindIndex.cursor(tx: newTrans) { cursor in
+				let id = try cursor.opSet(key: NOSTR_kind(RAW_native: 5))
+				kind5Ids.insert(id)
+				while let id = try? cursor.opNextDup() {
+					kind5Ids.insert(id)
+				}
+			}
+			
+			if !allAuthors.isEmpty { kind5Ids.formIntersection(allAuthors) }
+			var deleteIds = Set<NOSTR_id>()
+			try signedEvents.cursor(tx:newTrans) { cursor in
+				for id in kind5Ids {
+					let signedEvent = try cursor.opSet(key: id)
+					for tag in signedEvent.unsignedEvent.tags.array {
+						guard let eventRefTag = tag.unwrap(as: EventRefTag.self) else {
+							continue
+						}
+						deleteIds.insert(eventRefTag.value)
+					}
+				}
+			}
+			allFilterIds.subtract(deleteIds)
+			allFilterIds.subtract(kind5Ids)
+		} catch {}
+		
 		var queriedEvents:[TesseraSignedEvent] = []
 		try signedEvents.cursor(tx:newTrans) { cursor in
 			for id in allFilterIds {
@@ -224,10 +252,10 @@ extension TesseraDB {
 				for id in kind5Ids {
 					let signedEvent = try cursor.opSet(key: id)
 					for tag in signedEvent.unsignedEvent.tags.array {
-						guard tag.NOSTR_tag_index_field == NOSTR_tag_name(string: "e") else {
+						guard let eventRefTag = tag.unwrap(as: EventRefTag.self) else {
 							continue
 						}
-						deleteIds.insert(NOSTR_id(tagValue: tag.NOSTR_tag_values.array.first! as! NOSTR_tag_generic_value)!)
+						deleteIds.insert(eventRefTag.value)
 					}
 				}
 			}

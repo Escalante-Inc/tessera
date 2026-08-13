@@ -11,7 +11,7 @@ extension NOSTR_id {
 	}
 }
 extension NOSTR_id:@retroactive MDB_comparable {
-public static var MDB_compare_f: MDB_compare_ftype {
+	public static var MDB_compare_f: MDB_compare_ftype {
 		return { lhs, rhs in
 		   guard let lhs = lhs, let rhs = rhs else {
 			   return 0

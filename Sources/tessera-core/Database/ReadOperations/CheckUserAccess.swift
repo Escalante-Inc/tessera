@@ -15,9 +15,10 @@ extension TesseraDB {
 	func checkReadAccessForgiving(user: PublicKey, kinds: [NOSTR_kind], tx: borrowing Transaction) throws -> [NOSTR_kind] {
 		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
 		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
-		guard let userAccess = userEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "readAccessLevels")})?.NOSTR_tag_values.array.first else {
+		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: ReadAccessLevels.self) else {
 			throw AccessLevelError.userHasNoAccessLevels
 		}
+		let userAccess = userAccessTag.value
 		return userAccess.RAW_access { ptr in
 			var allowedKinds:[NOSTR_kind] = []
 			for kind in kinds {
@@ -39,9 +40,10 @@ extension TesseraDB {
 	func checkReadAccess(user: PublicKey, kinds: [NOSTR_kind], tx: borrowing Transaction) throws -> Bool {
 		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
 		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
-		guard let userAccess = userEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "readAccessLevels")})?.NOSTR_tag_values.array.first else {
+		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: ReadAccessLevels.self) else {
 			throw AccessLevelError.userHasNoAccessLevels
 		}
+		let userAccess = userAccessTag.value
 		return userAccess.RAW_access { ptr in
 			for kind in kinds {
 				guard kind.RAW_native() >= 40_000 else { continue }
@@ -62,9 +64,10 @@ extension TesseraDB {
 	func checkWriteAccess(user: PublicKey, kind: NOSTR_kind, tx: borrowing Transaction) throws -> Bool {
 		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
 		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
-		guard let userAccess = userEvent.unsignedEvent.tags.array.first(where: { $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "writeAccessLevels")})?.NOSTR_tag_values.array.first else {
+		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: WriteAccessLevels.self) else {
 			throw AccessLevelError.userHasNoAccessLevels
 		}
+		let userAccess = userAccessTag.value
 		return userAccess.RAW_access { ptr in
 			guard kind.RAW_native() >= 40_000 else { return true }
 			let index = rangeIndex(for: Int(kind.RAW_native()))

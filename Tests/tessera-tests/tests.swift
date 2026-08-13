@@ -10,6 +10,17 @@ import bedrock
 import nostr_kit_swift
 @testable import tessera_core
 
+@RAW_convertible_string_type<UTF8>(backing:RAW_byte.self)
+struct Example1: Sendable {}
+
+@RAW_staticbuff_binaryfloatingpoint_type<Float>
+@RAW_staticbuff(bytes: 8)
+struct Example2: Sendable {}
+
+@RAW_staticbuff_fixedwidthinteger_type<UInt128>(bigEndian: false)
+@RAW_staticbuff(bytes: 16)
+struct Example3: Sendable {}
+
 @Suite("Tessera Tests", .serialized)
 struct TesseraTests {}
 
@@ -443,6 +454,32 @@ extension TesseraTests {
 			defer { pointer2.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer2.baseAddress!)
 			decodedReplaceableKey = ReplaceableKey(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
+			#expect(replaceableKey == decodedReplaceableKey)
+		}
+		
+		@Test func encodeDecodeReplaceableKeyEvent() {
+			var replaceableKey = EventTag(identifier: "refMembr", reference: ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: nil))
+			var replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
+			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
+			defer { pointer.deallocate() }
+			_ = replaceableKey.RAW_encode(dest:pointer.baseAddress!)
+			var decodedReplaceableKey = EventTag(RAW_decode: pointer.baseAddress!, count: replaceableKeyLen)!
+			#expect(replaceableKey == decodedReplaceableKey)
+			
+			replaceableKey = EventTag(identifier: "refCat", reference: ReplaceableKey(pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey), kind: NOSTR_kind(RAW_native: 100), dTag: nil))
+			replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
+			let pointer2 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
+			defer { pointer2.deallocate() }
+			_ = replaceableKey.RAW_encode(dest:pointer2.baseAddress!)
+			decodedReplaceableKey = EventTag(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
+			#expect(replaceableKey == decodedReplaceableKey)
+			
+			replaceableKey = EventTag(identifier: "refStat", reference: ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: NOSTR_tag_generic_value("generic")))
+			replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
+			let pointer3 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
+			defer { pointer3.deallocate() }
+			_ = replaceableKey.RAW_encode(dest:pointer3.baseAddress!)
+			decodedReplaceableKey = EventTag(RAW_decode: pointer3.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
 		}
 	}

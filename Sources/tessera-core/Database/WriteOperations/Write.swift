@@ -35,7 +35,9 @@ extension TesseraDB {
 			if signedEvent.unsignedEvent.kind.RAW_native() == 5 {
 				for tag in signedEvent.unsignedEvent.tags.array {
 					do {
-						let event = try cursor.opSet(key: tag.NOSTR_tag_values.array.first! as! NOSTR_id)
+						guard let eventRefTag = tag.unwrap(as: EventRefTag.self) else { continue }
+						let id = eventRefTag.value
+						let event = try cursor.opSet(key: id)
 						guard event.unsignedEvent.publicKey == signedEvent.unsignedEvent.publicKey else {
 							throw SignedNoteError.invalidKind5PublicKey
 						}
@@ -63,12 +65,8 @@ extension TesseraDB {
 		try dateIndex.setEntry(key: signedEvent.unsignedEvent.date, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		
 		for tag in signedEvent.unsignedEvent.tags.array {
-			var dbTag = tag
-			// Tags are indexed on their name and only the first item in the values array
-			if tag.NOSTR_tag_values.array.count > 1 {
-				dbTag.NOSTR_tag_values.array = [dbTag.NOSTR_tag_values.array.first!]
-			}
-			try tagIndex.setEntry(key: dbTag as! EventTag, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
+			guard let unwrappedTag = tag.unwrap(as: EventTag.self) else { continue }
+			try tagIndex.setEntry(key: unwrappedTag, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		}
 		
 		if !NostrKindCategory.nonReplaceable.range.contains(kind) {
@@ -86,7 +84,7 @@ extension TesseraDB {
 	public func scribeNewUser(signedEvent:TesseraSignedEvent, logLevel:Logger.Level) throws {
 		var logger = log
 		logger.logLevel = logLevel
-		guard signedEvent.unsignedEvent.kind.RAW_native() == 0 else {
+		guard signedEvent.unsignedEvent.kind.RAW_native() == TesseraKinds.user.value else {
 			throw SignedNoteError.invalidUserNote
 		}
 		
@@ -95,7 +93,7 @@ extension TesseraDB {
 		let newTrans = try Transaction(env:env, readOnly:false)
 		try userIndex.cursor(tx:newTrans) { cursor in
 			guard try cursor.containsEntry(key:signedEvent.unsignedEvent.publicKey) == false else {
-				logger.warning(Logger.Message.red("Attempted to write an event that already exists"))
+				logger.warning(Logger.Message.red("Attempted to write a user that already exists. An administrator can either edit the original user or delete it."))
 				throw LMDBError.keyExists
 			}
 			try cursor.setEntry(key:signedEvent.unsignedEvent.publicKey, value:signedEvent.unsignedEvent.id, flags:[.noOverwrite])
@@ -119,12 +117,8 @@ extension TesseraDB {
 		try dateIndex.setEntry(key: signedEvent.unsignedEvent.date, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
 		
 		for tag in signedEvent.unsignedEvent.tags.array {
-			var dbTag = tag
-			// Tags are indexed on their name and only the first item in the values array
-			if tag.NOSTR_tag_values.array.count > 1 {
-				dbTag.NOSTR_tag_values.array = [dbTag.NOSTR_tag_values.array.first!]
-			}
-			try tagIndex.setEntry(key: dbTag as! EventTag, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans)
+			guard let unwrappedTag = tag.unwrap(as: EventTag.self) else { continue }
+			try tagIndex.setEntry(key: unwrappedTag, value: signedEvent.unsignedEvent.id, flags: [], tx: newTrans) 
 		}
 		
 		try newTrans.commit()

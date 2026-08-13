@@ -16,13 +16,11 @@ public func applyTesseraFilter<Content:NOSTR_event_content>(_ event: NOSTR_event
 	var hasTags: Bool = true
 	tagLoop: for tag in filter.tags {
 		for eventTag in event.unsignedEvent.tags.array {
-			guard tag.NOSTR_tag_index_field == eventTag.NOSTR_tag_index_field else {
+			guard tag.indexField == eventTag.indexField else {
 				continue
 			}
 			// At least one value from the event must appear in the filter values
-			if tag.NOSTR_tag_values.array.contains(where: { tagValue in
-				tagValue.isEqual(to: eventTag.NOSTR_tag_values.array[0])
-			}) {
+			if tag.value.isEqual(to: eventTag.value) {
 				continue tagLoop
 			}
 		}
@@ -56,15 +54,15 @@ public func eventMatchesFilters<Content:NOSTR_event_content>(_ event: NOSTR_even
 }
 
 public func author<Content:NOSTR_event_content>(ofEvent event: NOSTR_event_signed<UnsignedEvent<Content>>) -> PublicKey {
-	let tagNameString = "author"
-	let tagName = tagNameString.data(using: .utf8)!.withUnsafeBytes { ptr in
-		NOSTR_tag_name(RAW_staticbuff: ptr.baseAddress!)
-	}
-	for tag in event.unsignedEvent.tags.array {
-		if tag.NOSTR_tag_index_field == tagName {
-			return tag.NOSTR_tag_values.array.first! as! PublicKey
-		}
-	}
+//	let tagNameString = "author"
+//	let tagName = tagNameString.data(using: .utf8)!.withUnsafeBytes { ptr in
+//		NOSTR_tag_name(RAW_staticbuff: ptr.baseAddress!)
+//	}
+//	for tag in event.unsignedEvent.tags.array {
+//		if tag.NOSTR_tag_index_field == tagName {
+//			return tag.NOSTR_tag_values.array.first! as! PublicKey
+//		}
+//	}
 	return event.unsignedEvent.publicKey
 }
 
@@ -88,16 +86,16 @@ internal func createNewUpdatedEvent<Content:NOSTR_event_content>(_ event: NOSTR_
 			}
 		}
 	}
-	eventTags.append(try createAuthorTag(author: event.unsignedEvent.publicKey))
+//	eventTags.append(try createAuthorTag(author: event.unsignedEvent.publicKey))
 	let unsignedEvent = try UnsignedEvent(publicKey: event.unsignedEvent.publicKey, date: NOSTR_date(date: Date()), tags: eventTags, application: NOSTR_application(RAW_native: 1), kind: event.unsignedEvent.kind, content: eventContent)
 	return try unsignedEvent.sign(as: adminSigningKey)
 }
 
-internal func createAuthorTag(author: PublicKey) throws -> EventTag {
-	let dateChanged = NOSTR_date(date: Date())
-	let tagNameString = "author"
-	let tagName = tagNameString.data(using: .utf8)!.withUnsafeBytes { ptr in
-		NOSTR_tag_name(RAW_staticbuff: ptr.baseAddress!)
-	}
-	return try EventTag(NOSTR_tag_index_field: tagName, NOSTR_tag_values: [author, dateChanged])
-}
+//internal func createAuthorTag(author: PublicKey) throws -> EventTag {
+//	let dateChanged = NOSTR_date(date: Date())
+//	let tagNameString = "author"
+//	let tagName = tagNameString.data(using: .utf8)!.withUnsafeBytes { ptr in
+//		NOSTR_tag_name(RAW_staticbuff: ptr.baseAddress!)
+//	}
+//	return EventTag(indexField: tagName, value: <#T##EventTag.tagValueType#>)
+//}

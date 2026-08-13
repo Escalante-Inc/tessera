@@ -15,6 +15,24 @@ public struct UserAccessLevel: Sendable, NOSTR_tag_value {
 	}
 }
 
+@NostrTag(name: "readAL")
+public struct ReadAccessLevels: Sendable, Hashable, NOSTR_tag {
+	public var indexField = NOSTR_tag_name(string: "readAL")
+	public var value: UserAccessLevel
+	public init(value: UserAccessLevel) {
+		self.value = value
+	}
+}
+
+@NostrTag(name: "writeAL")
+public struct WriteAccessLevels: Sendable, Hashable, NOSTR_tag {
+	public var indexField = NOSTR_tag_name(string: "writeAL")
+	public var value: UserAccessLevel
+	public init(value: UserAccessLevel) {
+		self.value = value
+	}
+}
+
 /// The basic Tessera user information.
 /// This is the content posted in a kind 0 (profile) note.
 public struct User: RAW_convertible, RAW_accessible {

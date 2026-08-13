@@ -27,6 +27,8 @@ struct CLI:AsyncParsableCommand {
 				GenerateEd25519Keys.self,
 				CreateNewAccessLevel.self,
 				CreateUser.self,
+				CreateUnboundedAdmin.self,
+				CreateUnboundedYubikeyAdmin.self,
 				Config.self
 			]
 		)
@@ -83,7 +85,7 @@ struct CLI:AsyncParsableCommand {
 			try await openPGPConnection.startOpenPGP()
 			let publicKey = try await openPGPConnection.getPublicKeys().first!
 			
-			let unsignedEvent = try UnsignedEvent(publicKey: publicKey, tags: [EventTag(accessLevel: index), EventTag(accessLevel: name)], application: 0, kind: 1, content: ByteBuffer())
+			let unsignedEvent = try UnsignedEvent(publicKey: publicKey, tags: [AccessLevelTag(value: index), AccessLevelNameTag(value: name)], application: 0, kind: TesseraKinds.accessLevel.value, content: ByteBuffer())
 			try await openPGPConnection.openVerifyAccess(pwType: .user, password: "123456".data(using: .utf8)!)
 			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: unsignedEvent.id)
 			try await openPGPConnection.closeVerifyAccess(pwType: .user)
@@ -114,13 +116,17 @@ struct CLI:AsyncParsableCommand {
 
 		func run() async throws {
 			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
-			var filters = readPermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [EventTag(accessLevel: $0)]) }
+			var filters = readPermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [AccessLevelNameTag(value: $0)]) }
 			var events = try tesseraDB.queryEventsBySmartFilter(filters: filters)
-			let readPermNumbers:[UInt8] = events.map({ String($0.unsignedEvent.tags.array.first{ $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "perm")}?.NOSTR_tag_values.array.first! as! NOSTR_tag_generic_value).utf8.first! })
+			let readPermNumbers:[UInt8] = events.map({
+				$0.unsignedEvent.tags.array.first { $0.unwrap(as: AccessLevelTag.self) != nil }!.unwrap(as: AccessLevelTag.self)!.value.RAW_native()
+			})
 			
-			filters = writePermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [EventTag(accessLevel: $0)]) }
+			filters = writePermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [AccessLevelNameTag(value: $0)]) }
 			events = try tesseraDB.queryEventsBySmartFilter(filters: filters)
-			let writePermNumbers:[UInt8] = events.map({ String($0.unsignedEvent.tags.array.first{ $0.NOSTR_tag_index_field == NOSTR_tag_name(string: "perm")}?.NOSTR_tag_values.array.first! as! NOSTR_tag_generic_value).utf8.first! })
+			let writePermNumbers:[UInt8] = events.map({
+				$0.unsignedEvent.tags.array.first { $0.unwrap(as: AccessLevelTag.self) != nil }!.unwrap(as: AccessLevelTag.self)!.value.RAW_native()
+			})
 			
 			let openPGPConnection = OpenPGPConnection(logLevel: .debug)
 			try await openPGPConnection.connectToYubikey()
@@ -128,11 +134,75 @@ struct CLI:AsyncParsableCommand {
 			let publicKey = try await openPGPConnection.getPublicKeys().first!
 			
 			let userEvent = try UnsignedEvent(publicKey: publicKey,
-											  tags: [EventTag(tagName: "userName", tagValues: [userName]),
-													 EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: readPermNumbers)]),
-													 EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: writePermNumbers)])],
+											  tags: [GenericTag(name: "userName", value: userName),
+													 ReadAccessLevels(value: UserAccessLevel(accessLevels: readPermNumbers)),
+													 WriteAccessLevels(value: UserAccessLevel(accessLevels: writePermNumbers))],
 											  application: 0,
-											  kind: 0,
+											  kind: TesseraKinds.user.value,
+											  content: ByteBuffer())
+			try await openPGPConnection.openVerifyAccess(pwType: .user, password: "123456".data(using: .utf8)!)
+			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: userEvent.id)
+			try await openPGPConnection.closeVerifyAccess(pwType: .user)
+			try sig.withUnsafeBytes { ptr in
+				let nostrSig = NOSTR_sig(RAW_staticbuff: ptr.baseAddress!)
+				let signedEvent = NOSTR_event_signed(unsignedEvent: userEvent, sig: nostrSig)
+				try tesseraDB.scribeNewUser(signedEvent: signedEvent, logLevel: .debug)
+			}
+		}
+	}
+	
+	struct CreateUnboundedAdmin:AsyncParsableCommand {
+		static let configuration = CommandConfiguration(
+			abstract:"Creates a new user for the tesserae given a secret key."
+		)
+		
+		@Option(help:"the path to the database directory, defaults to the user's home directory")
+		var databasePath:bedrock.Path = CLI.defaultDBBasePath()
+		
+		@Argument(help:"My secret private key")
+		var myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
+		@Argument(help:"The users name.")
+		var adminName:String
+
+		func run() async throws {
+			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
+			let (signingPubKey, signingPrivKey) = try Ed25519.generateKeys(secretKey: myPrivateKey)
+			
+			let userEvent = try UnsignedEvent(publicKey: signingPubKey,
+											  tags: [GenericTag(name: "userName", value: adminName),
+													 ReadAccessLevels(value: UserAccessLevel(accessLevels: Array(UInt8.min...UInt8.max))),
+													 WriteAccessLevels(value: UserAccessLevel(accessLevels: Array(UInt8.min...UInt8.max)))],
+											  application: 0,
+											  kind: TesseraKinds.user.value,
+											  content: ByteBuffer()).sign(as: signingPrivKey)
+			try tesseraDB.scribeNewUser(signedEvent: userEvent, logLevel: .debug)
+		}
+	}
+	
+	struct CreateUnboundedYubikeyAdmin:AsyncParsableCommand {
+		static let configuration = CommandConfiguration(
+			abstract:"Creates a new user for the tesserae. Requires a yubikey to be plugged into the device."
+		)
+		
+		@Option(help:"the path to the database directory, defaults to the user's home directory")
+		var databasePath:bedrock.Path = CLI.defaultDBBasePath()
+		
+		@Argument(help:"The users name.")
+		var adminName:String
+
+		func run() async throws {
+			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
+			let openPGPConnection = OpenPGPConnection(logLevel: .debug)
+			try await openPGPConnection.connectToYubikey()
+			try await openPGPConnection.startOpenPGP()
+			let publicKey = try await openPGPConnection.getPublicKeys().first!
+			
+			let userEvent = try UnsignedEvent(publicKey: publicKey,
+											  tags: [GenericTag(name: "userName", value: adminName),
+													 ReadAccessLevels(value: UserAccessLevel(accessLevels: Array(UInt8.min...UInt8.max))),
+													 WriteAccessLevels(value: UserAccessLevel(accessLevels: Array(UInt8.min...UInt8.max)))],
+											  application: 0,
+											  kind: TesseraKinds.user.value,
 											  content: ByteBuffer())
 			try await openPGPConnection.openVerifyAccess(pwType: .user, password: "123456".data(using: .utf8)!)
 			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: userEvent.id)
