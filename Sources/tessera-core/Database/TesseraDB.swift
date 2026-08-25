@@ -30,24 +30,30 @@ public struct TesseraDB:Sendable {
 	internal let replaceableEvents:Database.DupSort<ReplaceableKey, DatedID>
 	
 	/// Deletes the environments files. Equivalent to a `rm -r 'env_file_path'`.
+	/// If the environment (or lock) file does not exist, this is a no-op — it does
+	/// not throw and does not log an error.
 	public static func deleteEnvironment(base:Path, environment:String, logLevel:Logger.Level) throws {
 		let finalMdbPath = base.appendingPathComponent("\(environment).mdb")
 		let finalLockPath = base.appendingPathComponent("\(environment).mdb-lock")
 		var makeLogger = Logger(label:"\(String(describing:Self.self))")
 		makeLogger.logLevel = logLevel
-		do {
-			makeLogger.debug("deleting tessera database", metadata:["path":"\(finalMdbPath.path())"])
-			try FileManager.default.removeItem(atPath:finalMdbPath.path())
-			makeLogger.info(Logger.Message.orange("successfully deleted \(environment) database"))
-		} catch {
-			makeLogger.error("Error: \(finalMdbPath.path()) couldn’t be removed or doesn't exist.")
+		if FileManager.default.fileExists(atPath: finalMdbPath.path()) {
+			do {
+				makeLogger.debug("deleting tessera database", metadata:["path":"\(finalMdbPath.path())"])
+				try FileManager.default.removeItem(atPath:finalMdbPath.path())
+				makeLogger.info(Logger.Message.orange("successfully deleted \(environment) database"))
+			} catch {
+				makeLogger.error("Error: \(finalMdbPath.path()) couldn’t be removed.")
+			}
 		}
-		do {
-			makeLogger.debug("deleting tessera database lock", metadata:["path":"\(finalLockPath.path())"])
-			try FileManager.default.removeItem(atPath:finalLockPath.path())
-			makeLogger.info(Logger.Message.orange("successfully deleted \(environment) database lock"))
-		} catch {
-			makeLogger.error("Error: \(finalLockPath.path()) couldn’t be removed or doesn't exist.")
+		if FileManager.default.fileExists(atPath: finalLockPath.path()) {
+			do {
+				makeLogger.debug("deleting tessera database lock", metadata:["path":"\(finalLockPath.path())"])
+				try FileManager.default.removeItem(atPath:finalLockPath.path())
+				makeLogger.info(Logger.Message.orange("successfully deleted \(environment) database lock"))
+			} catch {
+				makeLogger.error("Error: \(finalLockPath.path()) couldn’t be removed.")
+			}
 		}
 	}
 	

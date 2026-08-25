@@ -85,7 +85,7 @@ struct CLI:AsyncParsableCommand {
 			try await openPGPConnection.startOpenPGP()
 			let publicKey = try await openPGPConnection.getPublicKeys().first!
 			
-			let unsignedEvent = try UnsignedEvent(publicKey: publicKey, tags: [AccessLevelTag(value: index), AccessLevelNameTag(value: name)], application: 0, kind: TesseraKinds.accessLevel.value, content: ByteBuffer())
+			let unsignedEvent = try UnsignedEvent(publicKey: publicKey, tags: [AccessLevelTag(value: RAW_byte(RAW_native: index)), AccessLevelNameTag(value: Encoded.String(name))], application: 0, kind: TesseraKinds.accessLevel.value, content: ByteBuffer())
 			try await openPGPConnection.openVerifyAccess(pwType: .user, password: "123456".data(using: .utf8)!)
 			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: unsignedEvent.id)
 			try await openPGPConnection.closeVerifyAccess(pwType: .user)
@@ -116,13 +116,13 @@ struct CLI:AsyncParsableCommand {
 
 		func run() async throws {
 			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
-			var filters = readPermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [AccessLevelNameTag(value: $0)]) }
+			var filters = readPermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [AccessLevelNameTag(value: Encoded.String($0))]) }
 			var events = try tesseraDB.queryEventsBySmartFilter(filters: filters)
 			let readPermNumbers:[UInt8] = events.map({
 				$0.unsignedEvent.tags.array.first { $0.unwrap(as: AccessLevelTag.self) != nil }!.unwrap(as: AccessLevelTag.self)!.value.RAW_native()
 			})
 			
-			filters = writePermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [AccessLevelNameTag(value: $0)]) }
+			filters = writePermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [AccessLevelNameTag(value: Encoded.String($0))]) }
 			events = try tesseraDB.queryEventsBySmartFilter(filters: filters)
 			let writePermNumbers:[UInt8] = events.map({
 				$0.unsignedEvent.tags.array.first { $0.unwrap(as: AccessLevelTag.self) != nil }!.unwrap(as: AccessLevelTag.self)!.value.RAW_native()
@@ -134,7 +134,7 @@ struct CLI:AsyncParsableCommand {
 			let publicKey = try await openPGPConnection.getPublicKeys().first!
 			
 			let userEvent = try UnsignedEvent(publicKey: publicKey,
-											  tags: [GenericTag(name: "userName", value: userName),
+											  tags: [StringTag(name: "userName", value: userName)!,
 													 ReadAccessLevels(value: UserAccessLevel(accessLevels: readPermNumbers)),
 													 WriteAccessLevels(value: UserAccessLevel(accessLevels: writePermNumbers))],
 											  application: 0,
@@ -169,7 +169,7 @@ struct CLI:AsyncParsableCommand {
 			let (signingPubKey, signingPrivKey) = try Ed25519.generateKeys(secretKey: myPrivateKey)
 			
 			let userEvent = try UnsignedEvent(publicKey: signingPubKey,
-											  tags: [GenericTag(name: "userName", value: adminName),
+											  tags: [StringTag(name: "userName", value: adminName)!,
 													 ReadAccessLevels(value: UserAccessLevel(accessLevels: Array(UInt8.min...UInt8.max))),
 													 WriteAccessLevels(value: UserAccessLevel(accessLevels: Array(UInt8.min...UInt8.max)))],
 											  application: 0,
@@ -198,7 +198,7 @@ struct CLI:AsyncParsableCommand {
 			let publicKey = try await openPGPConnection.getPublicKeys().first!
 			
 			let userEvent = try UnsignedEvent(publicKey: publicKey,
-											  tags: [GenericTag(name: "userName", value: adminName),
+											  tags: [StringTag(name: "userName", value: adminName)!,
 													 ReadAccessLevels(value: UserAccessLevel(accessLevels: Array(UInt8.min...UInt8.max))),
 													 WriteAccessLevels(value: UserAccessLevel(accessLevels: Array(UInt8.min...UInt8.max)))],
 											  application: 0,

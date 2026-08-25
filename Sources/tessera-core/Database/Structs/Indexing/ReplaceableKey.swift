@@ -8,7 +8,7 @@ public struct ReplaceableKeyTag: Sendable, Hashable, NOSTR_tag {
 	public var indexField: NOSTR_tag_name
 	public var value: ReplaceableKey
 	public init(name: String, key: ReplaceableKey) {
-		self.indexField = NOSTR_tag_name(string: name)
+		self.indexField = NOSTR_tag_name(string: name)!
 		self.value = key
 	}
 }
@@ -110,9 +110,9 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 	
 	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
 		var inputPtr = inputPtr
-		guard count > MemoryLayout<EncodedBool>.size else { return nil }
-		let pubKeyExists = EncodedBool(RAW_staticbuff_seeking: &inputPtr)
-		var dataCount = count - MemoryLayout<EncodedBool>.size
+		guard count > MemoryLayout<Encoded.Bool>.size else { return nil }
+		let pubKeyExists = Encoded.Bool(RAW_staticbuff_seeking: &inputPtr)
+		var dataCount = count - MemoryLayout<Encoded.Bool>.size
 		if pubKeyExists.bool {
 			guard count >= MemoryLayout<PublicKey>.size else { return nil }
 			self.pubkey = PublicKey(RAW_staticbuff_seeking: &inputPtr)
@@ -121,10 +121,10 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 			self.pubkey = nil
 		}
 		
-		guard count >= MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size else { return nil }
+		guard count >= MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size else { return nil }
 		self.kind = NOSTR_kind(RAW_staticbuff_seeking: &inputPtr)
-		let dTagExists = EncodedBool(RAW_staticbuff_seeking: &inputPtr)
-		dataCount -= MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size
+		let dTagExists = Encoded.Bool(RAW_staticbuff_seeking: &inputPtr)
+		dataCount -= MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size
 		
 		if dTagExists.bool {
 			let dTagLength = Int(Bytes2(RAW_staticbuff_seeking: &inputPtr).RAW_native())
@@ -141,7 +141,7 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 	}
 	
 	public func RAW_encode(count: inout RAW.size_t) {
-		count += MemoryLayout<NOSTR_kind>.size + MemoryLayout<EncodedBool>.size * 2
+		count += MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size * 2
 		if pubkey != nil {
 			count += MemoryLayout<PublicKey>.size
 		}
@@ -154,22 +154,22 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 	public func RAW_encode(dest: UnsafeMutablePointer<UInt8>) -> UnsafeMutablePointer<UInt8> {
 		var dest = dest
 		if pubkey != nil {
-			dest = EncodedBool(true).RAW_encode(dest: dest)
+			dest = Encoded.Bool(true).RAW_encode(dest: dest)
 			dest = pubkey!.RAW_encode(dest: dest)
 		} else {
-			dest = EncodedBool(false).RAW_encode(dest: dest)
+			dest = Encoded.Bool(false).RAW_encode(dest: dest)
 		}
 		
 		dest = kind.RAW_encode(dest: dest)
 		
 		if dTag != nil {
-			dest = EncodedBool(true).RAW_encode(dest: dest)
+			dest = Encoded.Bool(true).RAW_encode(dest: dest)
 			var dTagLength = 0; dTag!.RAW_encode(count: &dTagLength)
 			let dTagLengthBytes = Bytes2(RAW_native: UInt16(dTagLength))
 			dest = dTagLengthBytes.RAW_encode(dest: dest)
 			dest = dTag!.RAW_encode(dest: dest)
 		} else {
-			dest = EncodedBool(false).RAW_encode(dest: dest)
+			dest = Encoded.Bool(false).RAW_encode(dest: dest)
 		}
 		return dest
 	}

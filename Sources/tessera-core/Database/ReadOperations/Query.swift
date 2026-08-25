@@ -47,6 +47,9 @@ extension TesseraDB {
 				for author in filter.authors {
 					do {
 						try authorIndex.cursor(tx: tx) { cursor in
+							// Guard with containsEntry first: opSet throws (and fatals via the
+							// RAW_access `try!`) when the key isn't present in the index.
+							guard try cursor.containsEntry(key: author) else { return }
 							let id = try cursor.opSet(key: author)
 							authorIds.insert(id)
 							while let id = try? cursor.opNextDup() {
@@ -64,6 +67,7 @@ extension TesseraDB {
 				for kind in filter.kinds {
 					do {
 						try kindIndex.cursor(tx: tx) { cursor in
+							guard try cursor.containsEntry(key: kind) else { return }
 							let id = try cursor.opSet(key: kind)
 							kindIds.insert(id)
 							while let id = try? cursor.opNextDup() {
@@ -80,6 +84,7 @@ extension TesseraDB {
 				for application in filter.applications {
 					do {
 						try applicationIndex.cursor(tx: tx) { cursor in
+							guard try cursor.containsEntry(key: application) else { return }
 							let id = try cursor.opSet(key: application)
 							applicationIds.insert(id)
 							while let id = try? cursor.opNextDup() {
@@ -92,32 +97,45 @@ extension TesseraDB {
 			
 			// Multiple tags in one event, so multiple tags are AND'd (intersection)
 			if !filter.tags.isEmpty {
-				do {
-					var iterator = filter.tags.makeIterator()
-					if let firstTag = iterator.next() {
-						tagIds = Set<NOSTR_id>()
-						try tagIndex.cursor(tx: tx) { cursor in
-							let id = try cursor.opSet(key: firstTag as! EventTag)
-							tagIds.insert(id)
-							while let id = try? cursor.opNextDup() {
-								tagIds.insert(id)
-							}
-						}
-						while let tag = iterator.next() {
-							var newTagIds = Set<NOSTR_id>()
+				// Only tags that can be represented as an `EventTag` are stored in the tag index.
+				// Any other tag type can never match an indexed event, so treat it as an empty
+				// constraint (yields nothing) rather than force-casting and crashing.
+				let eventTags = filter.tags.compactMap { $0 as? EventTag }
+				if eventTags.isEmpty {
+					tagIds = []
+				} else {
+					do {
+						var iterator = eventTags.makeIterator()
+						if let firstTag = iterator.next() {
+							tagIds = Set<NOSTR_id>()
 							try tagIndex.cursor(tx: tx) { cursor in
-								let id = try cursor.opSet(key: tag as! EventTag)
-								newTagIds.insert(id)
+								guard try cursor.containsEntry(key: firstTag) else { return }
+								let id = try cursor.opSet(key: firstTag)
+								tagIds.insert(id)
 								while let id = try? cursor.opNextDup() {
-									newTagIds.insert(id)
+									tagIds.insert(id)
 								}
 							}
-							tagIds.formIntersection(newTagIds)
+							while let tag = iterator.next() {
+								var newTagIds = Set<NOSTR_id>()
+								try tagIndex.cursor(tx: tx) { cursor in
+									guard try cursor.containsEntry(key: tag) else {
+										newTagIds = []
+										return
+									}
+									let id = try cursor.opSet(key: tag)
+									newTagIds.insert(id)
+									while let id = try? cursor.opNextDup() {
+										newTagIds.insert(id)
+									}
+								}
+								tagIds.formIntersection(newTagIds)
+							}
 						}
+					} catch {
+						tagIds = []
+						break
 					}
-				} catch {
-					tagIds = []
-					break
 				}
 			}
 			
@@ -126,31 +144,31 @@ extension TesseraDB {
 				dateIds = Set<NOSTR_id>()
 				do {
 					try dateIndex.cursor(tx: tx) { cursor in
-						if let since = filter.since {
-							_ = try cursor.opSetRange(key: since)
-						} else {
-							_ = try cursor.opFirst()
-						}
-						if let until = filter.until {
-							let (key, val) = try cursor.opGetCurrent()
-							if key < until {
-								dateIds.insert(val)
-							}
-							while let (key, val) = try? cursor.opNext() {
-								if key < until {
-									dateIds.insert(val)
-								}
-							}
-						} else {
-							let (_, val) = try cursor.opGetCurrent()
+						// The date index is sorted ascending by `NOSTR_date`. Iterate it in order,
+						// collecting ids whose date falls within [since, until). `opFirst`/`opNext`
+						// return a catchable `notFound` at the boundaries (unlike `opSet`/`opSetRange`,
+						// which fatal the process via a `RAW_access` `try!` when a key is absent).
+						let since = filter.since ?? NOSTR_date(date: Date(timeIntervalSince1970: 0))
+						var (key, val) = try cursor.opFirst()
+						if key >= since && (filter.until == nil || key < filter.until!) {
 							dateIds.insert(val)
-							while let (_, val) = try? cursor.opNext() {
+						}
+						while let (nextKey, nextVal) = try? cursor.opNext() {
+							key = nextKey
+							val = nextVal
+							if let until = filter.until, key >= until {
+								break
+							}
+							if key >= since {
 								dateIds.insert(val)
 							}
 						}
 					}
 				} catch {
-					dateIds = nil
+					// No events fall within the requested date range, or the range is invalid.
+					// Keep the date constraint (empty set) so the query yields no results rather
+					// than silently dropping the date bounds and returning unrelated events.
+					dateIds = []
 				}
 			}
 			
@@ -184,6 +202,8 @@ extension TesseraDB {
 		do {
 			var kind5Ids = Set<NOSTR_id>()
 			try kindIndex.cursor(tx: newTrans) { cursor in
+				// Kind-5 (deletion) events may not exist in the index; guard before opSet.
+				guard try cursor.containsEntry(key: NOSTR_kind(RAW_native: 5)) else { return }
 				let id = try cursor.opSet(key: NOSTR_kind(RAW_native: 5))
 				kind5Ids.insert(id)
 				while let id = try? cursor.opNextDup() {
@@ -239,6 +259,8 @@ extension TesseraDB {
 		do {
 			var kind5Ids = Set<NOSTR_id>()
 			try kindIndex.cursor(tx: newTrans) { cursor in
+				// Kind-5 (deletion) events may not exist in the index; guard before opSet.
+				guard try cursor.containsEntry(key: NOSTR_kind(RAW_native: 5)) else { return }
 				let id = try cursor.opSet(key: NOSTR_kind(RAW_native: 5))
 				kind5Ids.insert(id)
 				while let id = try? cursor.opNextDup() {
@@ -286,6 +308,8 @@ extension TesseraDB {
 			let key = try ReplaceableKey(event: unsignedEvent)
 			
 			try replaceableEvents.cursor(tx: newTrans) { cursor in
+				// The replaceable key may not exist (e.g. it was force-deleted); guard before opSet.
+				guard try cursor.containsEntry(key: key) else { return }
 				_ = try cursor.opSet(key: key)
 				if try cursor.opLastDup().id == signedEvent.unsignedEvent.id {
 					upToDateEvents.append(signedEvent)

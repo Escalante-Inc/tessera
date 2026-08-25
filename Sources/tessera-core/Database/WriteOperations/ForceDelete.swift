@@ -20,6 +20,7 @@ extension TesseraDB {
 			
 			// Remove Event from the indexes
 			try authorIndex.deleteEntry(key: deletedEvent.unsignedEvent.publicKey, value: deletedEvent.unsignedEvent.id, tx: newTrans)
+			try applicationIndex.deleteEntry(key: deletedEvent.unsignedEvent.application, value: deletedEvent.unsignedEvent.id, tx: newTrans)
 			
 			try kindIndex.deleteEntry(key: deletedEvent.unsignedEvent.kind, value: deletedEvent.unsignedEvent.id, tx: newTrans)
 			
@@ -43,7 +44,7 @@ extension TesseraDB {
 				let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
 				let datedId = DatedID(date: deletedEvent.unsignedEvent.date, id: deletedEvent.unsignedEvent.id)
 				
-				try replaceableEvents.setEntry(key: replaceableKey, value: datedId, flags: [], tx: newTrans)
+				try replaceableEvents.deleteEntry(key: replaceableKey, value: datedId, tx: newTrans)
 			}
 			
 			
@@ -91,7 +92,7 @@ extension TesseraDB {
 					let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
 					let datedId = DatedID(date: deletedEvent.unsignedEvent.date, id: deletedEvent.unsignedEvent.id)
 					
-					try replaceableEvents.setEntry(key: replaceableKey, value: datedId, flags: [], tx: newTrans)
+					try replaceableEvents.deleteEntry(key: replaceableKey, value: datedId, tx: newTrans)
 				}
 			}
 			try newTrans.commit()

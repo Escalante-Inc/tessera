@@ -26,7 +26,7 @@ let package = Package(
 //		.package(url:"https://github.com/bwyma1/nostr-kit-swift", revision:"383708d31328ebecb806ace03b035203395198de"),
 		.package(path:"../nostr-kit-swift"),
 		.package(path:"../openpgp-kit-swift"),
-		.package(url:"https://github.com/tannerdsilva/wireguard-swift", revision:"0eb24a67c30a5178526383ca5210b41f6b1e48c9"),
+		.package(url:"https://github.com/tannerdsilva/wireguard-swift", revision:"7245b1ee6ecae571318900c4343e97526c67868b"),
 
 		.package(url:"https://github.com/apple/swift-nio.git", "2.81.0"..<"3.0.0"),
 		.package(url:"https://github.com/tannerdsilva/bedrock.git", "7.1.0"..<"8.0.0"),

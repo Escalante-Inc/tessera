@@ -10,6 +10,17 @@ import bedrock
 import nostr_kit_swift
 @testable import tessera_core
 
+/// Builds a string-valued `EventTag` with the given index field (tag name).
+/// These are the only tags that `tagIndex` stores, so tag-filter queries rely on them.
+fileprivate func genericRefTag(_ name: String, _ value: String) -> EventTag {
+	EventTag(indexField: NOSTR_tag_name(string: name)!, value: NOSTR_tag_generic_value(value))
+}
+
+/// Builds a `p` (pubkey reference) `EventTag` for the given public key.
+fileprivate func userRefTag(_ key: PublicKey) -> EventTag {
+	EventTag(indexField: NOSTR_tag_name(string: "p")!, value: NOSTR_tag_generic_value(String(RAW_base64.encode(key))))
+}
+
 @RAW_convertible_string_type<UTF8>(backing:RAW_byte.self)
 struct Example1: Sendable {}
 
@@ -67,26 +78,30 @@ extension TesseraTests {
 			(aliceEd25519PublicKey, aliceEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: alicePrivateKey)
 			(bobEd25519PublicKey, bobEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: bobPrivateKey)
 			(adminEd25519PublicKey, adminEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: adminPrivateKey)
+			// Ensure a fresh database for this suite instance. Swift Testing may create multiple
+			// instances of this suite (one per test), so a leftover DB would cause duplicate-key
+			// failures on the shared `~/tessera.mdb`.
+			try? TesseraDB.deleteEnvironment(base: base, environment: "tessera", logLevel: .error)
 			self.tesseraDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
 			
-			aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [1])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
-			bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,2])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
-			adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
+			aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [1]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
+			bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0,1])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [0,2]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
+			adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0,1,2,255])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [0,1,2,255]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
 			try tesseraDB.scribeNewUser(signedEvent: aliceProfileEvent, logLevel: .info)
 			try tesseraDB.scribeNewUser(signedEvent: bobProfileEvent, logLevel: .info)
 			try tesseraDB.scribeNewUser(signedEvent: adminProfileEvent, logLevel: .info)
 			
 			aliceSignedEvent = try UnsignedEvent(
 				publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -1, to: Date())!),
-				tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Alice Tag"])], application: 0,
+				tags: [userRefTag(bobEd25519PublicKey), genericRefTag("a", "Alice Tag")], application: 0,
 				kind: 10000, content: ByteBuffer(string: "Alice Content")).sign(as: aliceEd25519PrivateKey)
 			bobSignedEvent = try UnsignedEvent(
 				publicKey: bobEd25519PublicKey, date: NOSTR_date(date: Date()),
-				tags: [EventTag(user: aliceEd25519PublicKey), EventTag(tagName: "b", tagValues: ["Bob Tag"]), EventTag(dTag: "testUniqueDTag")], application: 1,
+				tags: [userRefTag(aliceEd25519PublicKey), genericRefTag("b", "Bob Tag"), DTag(value: "testUniqueDTag")], application: 1,
 				kind: 30000, content: ByteBuffer(string: "Bob Content")).sign(as: bobEd25519PrivateKey)
 			adminSignedEvent = try UnsignedEvent(
 				publicKey: adminEd25519PublicKey, date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: 1, to: Date())!),
-				tags: [EventTag(user: aliceEd25519PublicKey), EventTag(user: bobEd25519PublicKey), EventTag(tagName: "ad", tagValues: ["Admin Tag"])], application: 0,
+				tags: [userRefTag(aliceEd25519PublicKey), userRefTag(bobEd25519PublicKey), genericRefTag("ad", "Admin Tag")], application: 0,
 				kind: 10000, content: ByteBuffer(string: "Admin Content")).sign(as: adminEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: aliceSignedEvent, logLevel: .info)
 			try tesseraDB.scribeNewEvent(signedEvent: bobSignedEvent, logLevel: .info)
@@ -102,16 +117,16 @@ extension TesseraTests {
 		}
 		
 		@Test func writeDeletionEvent() throws {
-			let validDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
+			let validDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventRefTag(value: aliceSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: validDeletionEvent, logLevel: .trace)
 			#expect(tesseraDB.eventCount == 7)
 			
-			let invalidKeyDeletionEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
+			let invalidKeyDeletionEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventRefTag(value: aliceSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
 			#expect(throws: SignedNoteError.invalidKind5PublicKey) {
 				try tesseraDB.scribeNewEvent(signedEvent: invalidKeyDeletionEvent, logLevel: .trace)
 			}
 			
-			let invalidTagDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: invalidKeyDeletionEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
+			let invalidTagDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventRefTag(value: invalidKeyDeletionEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
 			#expect(throws: SignedNoteError.invalidKind5Tag) {
 				try tesseraDB.scribeNewEvent(signedEvent: invalidTagDeletionEvent, logLevel: .trace)
 			}
@@ -163,11 +178,11 @@ extension TesseraTests {
 		}
 		
 		@Test func smartFilterTag() throws {
-			let tagFilterA = Filter(tags: [EventTag(user: aliceEd25519PublicKey)])
+			let tagFilterA = Filter(tags: [userRefTag(aliceEd25519PublicKey)])
 			var events = try tesseraDB.queryEventsBySmartFilter(filters: [tagFilterA])
 			#expect(events.count == 2)
 			
-			let tagFilterB = Filter(tags: [EventTag(user: aliceEd25519PublicKey), EventTag(user: bobEd25519PublicKey), EventTag(tagName: "ad", tagValues: ["Admin Tag"])])
+			let tagFilterB = Filter(tags: [userRefTag(aliceEd25519PublicKey), userRefTag(bobEd25519PublicKey), genericRefTag("ad", "Admin Tag")])
 			events = try tesseraDB.queryEventsBySmartFilter(filters: [tagFilterB])
 			#expect(events.count == 1)
 		}
@@ -202,11 +217,11 @@ extension TesseraTests {
 			var events = try tesseraDB.queryEventsBySmartFilter(filters: [combinedFilterA])
 			#expect(events.count == 2)
 			
-			let combinedFilterB = Filter(authors: [aliceEd25519PublicKey], tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Alice Tag"])], until: NOSTR_date(date: Calendar.current.date(byAdding: .hour, value: 1, to: Date())!))
+			let combinedFilterB = Filter(authors: [aliceEd25519PublicKey], tags: [userRefTag(bobEd25519PublicKey), genericRefTag("a", "Alice Tag")], until: NOSTR_date(date: Calendar.current.date(byAdding: .hour, value: 1, to: Date())!))
 			events = try tesseraDB.queryEventsBySmartFilter(filters: [combinedFilterB])
 			#expect(events.count == 1)
 			
-			let combinedFilterC = Filter(authors: [aliceEd25519PublicKey], kinds: [NOSTR_kind(RAW_native: 0)], tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Alice Tag"])], until: NOSTR_date(date: Calendar.current.date(byAdding: .hour, value: 1, to: Date())!))
+			let combinedFilterC = Filter(authors: [aliceEd25519PublicKey], kinds: [NOSTR_kind(RAW_native: 0)], tags: [userRefTag(bobEd25519PublicKey), genericRefTag("a", "Alice Tag")], until: NOSTR_date(date: Calendar.current.date(byAdding: .hour, value: 1, to: Date())!))
 			events = try tesseraDB.queryEventsBySmartFilter(filters: [combinedFilterC])
 			#expect(events.count == 0)
 			
@@ -214,8 +229,8 @@ extension TesseraTests {
 			events = try tesseraDB.queryEventsBySmartFilter(filters: [combinedFilterD])
 			#expect(events.count == 3)
 			
-			let combinedFilterE = Filter(authors: [aliceEd25519PublicKey, adminEd25519PublicKey], kinds: [NOSTR_kind(RAW_native: 0), NOSTR_kind(RAW_native: 10000)], tags: [EventTag(tagName: "ad", tagValues: ["Admin Tag"])])
-			let combinedFilterF = Filter(authors: [aliceEd25519PublicKey, adminEd25519PublicKey], kinds: [NOSTR_kind(RAW_native: 0), NOSTR_kind(RAW_native: 10000)], tags: [EventTag(tagName: "a", tagValues: ["Alice Tag"])])
+			let combinedFilterE = Filter(authors: [aliceEd25519PublicKey, adminEd25519PublicKey], kinds: [NOSTR_kind(RAW_native: 0), NOSTR_kind(RAW_native: 10000)], tags: [genericRefTag("ad", "Admin Tag")])
+			let combinedFilterF = Filter(authors: [aliceEd25519PublicKey, adminEd25519PublicKey], kinds: [NOSTR_kind(RAW_native: 0), NOSTR_kind(RAW_native: 10000)], tags: [genericRefTag("a", "Alice Tag")])
 			events = try tesseraDB.queryEventsBySmartFilter(filters: [combinedFilterE, combinedFilterF])
 			#expect(events.count == 2)
 			
@@ -226,16 +241,16 @@ extension TesseraTests {
 		
 		@Test func smartFilterWithUpdates() throws {
 			let updatedEvent = try UnsignedEvent( publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: Date()),
-												  tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["New Alice Tag"])], application: 0,
+												  tags: [userRefTag(bobEd25519PublicKey), genericRefTag("a", "New Alice Tag")], application: 0,
 				kind: 10000, content: ByteBuffer(string: "New Alice Content")).sign(as: aliceEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: updatedEvent, logLevel: .trace)
-			let filter = Filter(authors: [aliceEd25519PublicKey], tags:[EventTag(user: bobEd25519PublicKey)])
+			let filter = Filter(authors: [aliceEd25519PublicKey], tags:[userRefTag(bobEd25519PublicKey)])
 			var events = try tesseraDB.queryEventsBySmartFilter(filters: [filter])
 			#expect(events.count == 1)
 			#expect(events[0].unsignedEvent.content == ByteBuffer(string: "New Alice Content"))
 			
-			let updatedEvent2 = try UnsignedEvent( publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: Date()),
-												   tags: [EventTag(user: bobEd25519PublicKey), EventTag(tagName: "a", tagValues: ["Newer Alice Tag"])], application: 0,
+			let updatedEvent2 = try UnsignedEvent( publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: Calendar.current.date(byAdding: .second, value: 1, to: Date())!),
+												   tags: [userRefTag(bobEd25519PublicKey), genericRefTag("a", "Newer Alice Tag")], application: 0,
 				kind: 10000, content: ByteBuffer(string: "Newer Alice Content")).sign(as: aliceEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: updatedEvent2, logLevel: .trace)
 			events = try tesseraDB.queryEventsBySmartFilter(filters: [filter])
@@ -244,8 +259,8 @@ extension TesseraTests {
 		}
 		
 		@Test func smartFilterWithDeletions() throws {
-			let aliceDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(eventID: aliceSignedEvent.unsignedEvent.id), EventTag(eventID: aliceProfileEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
-			let bobDeletionEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(eventID: bobSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
+			let aliceDeletionEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventRefTag(value: aliceSignedEvent.unsignedEvent.id), EventRefTag(value: aliceProfileEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: aliceEd25519PrivateKey)
+			let bobDeletionEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventRefTag(value: bobSignedEvent.unsignedEvent.id)], application: 0, kind: 5, content: ByteBuffer()).sign(as: bobEd25519PrivateKey)
 			try tesseraDB.scribeNewEvent(signedEvent: aliceDeletionEvent, logLevel: .trace)
 			try tesseraDB.scribeNewEvent(signedEvent: bobDeletionEvent, logLevel: .trace)
 			#expect(tesseraDB.eventCount == 8)
@@ -344,20 +359,26 @@ extension TesseraTests {
 			(aliceEd25519PublicKey, aliceEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: alicePrivateKey)
 			(bobEd25519PublicKey, bobEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: bobPrivateKey)
 			(adminEd25519PublicKey, adminEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: adminPrivateKey)
+			// Ensure a fresh database for this suite instance. Swift Testing may create multiple
+			// instances of this suite (one per test), so a leftover DB would cause duplicate-key
+			// failures on the shared `~/tessera.mdb`.
+			try? TesseraDB.deleteEnvironment(base: base, environment: "tessera", logLevel: .error)
 			self.tesseraDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
 		}
 		
-		@Test func fillDatabaseWithData() throws {
-			let aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [1])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
-			let bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,2])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
-			let adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [EventTag(tagName: "readAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])]), EventTag(tagName: "writeAccessLevels", tagValues: [UserAccessLevel(accessLevels: [0,1,2,255])])], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
+		@Test func fillAndQueryDatabase() throws {
+			// Users (needed for read/write access checks on the events written below).
+			let aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [1]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
+			let bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0,1])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [0,2]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
+			let adminProfileEvent = try UnsignedEvent(publicKey: adminEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0,1,2,255])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [0,1,2,255]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Admin"))).sign(as: adminEd25519PrivateKey)
 			try tesseraDB.scribeNewUser(signedEvent: aliceProfileEvent, logLevel: .info)
 			try tesseraDB.scribeNewUser(signedEvent: bobProfileEvent, logLevel: .info)
 			try tesseraDB.scribeNewUser(signedEvent: adminProfileEvent, logLevel: .info)
 			let authors = [(aliceEd25519PublicKey, aliceEd25519PrivateKey), (bobEd25519PublicKey, bobEd25519PrivateKey), (adminEd25519PublicKey, adminEd25519PrivateKey)]
 			let tagValues = ["Tag0", "Tag1", "Tag2", "Tag3", "Tag4", "Tag5", "Tag6", "Tag7", "Tag8", "Tag9"]
 			let tagNames: [Character] = Array("abcefghijklmnopqrstuvwxyz")
-			
+		
+			// Fill the database with a large volume of signed events across all three authors.
 			for _ in 0..<50_000 {
 				let author = authors.randomElement()!
 				let kind = UInt32.random(in: [10_000...24_999, 30_000...39_999].randomElement()!)
@@ -365,33 +386,26 @@ extension TesseraTests {
 				let signedEvent = try UnsignedEvent(
 					publicKey: author.0,
 					date: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: Int.random(in: -365...365), to: Date())!),
-					tags: [EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!]),
-						   kind > 14_999 ? EventTag(tagName: "d", tagValues: [tagValues.randomElement()!]) :
-							EventTag(tagName: String(tagNames.randomElement()!), tagValues: [tagValues.randomElement()!])], application: application,
+					tags: [genericRefTag(String(tagNames.randomElement()!), tagValues.randomElement()!),
+						   kind > 14_999 ? DTag(value: Encoded.String(tagValues.randomElement()!)) :
+							genericRefTag(String(tagNames.randomElement()!), tagValues.randomElement()!)], application: application,
 					kind: kind,
 					content: ByteBuffer(string: "")).sign(as: author.1)
 				try tesseraDB.scribeNewEvent(signedEvent: signedEvent, logLevel: .warning)
 			}
-			
 			cliLogger.info("Database Size: ")
-		}
 		
-		@Test func smartFilter() throws {
-			let filterA = Filter(authors: [aliceEd25519PublicKey], tags: [EventTag(tagName: "a", tagValues: ["Tag0"])])
+			// Exercise both the smart and dumb filters over the populated database.
+			let filterA = Filter(authors: [aliceEd25519PublicKey], tags: [genericRefTag("a", "Tag0")])
 			let filterB = Filter(authors: [aliceEd25519PublicKey, bobEd25519PublicKey],
 								 since: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -50, to: Date())!),
 								 until: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: 50, to: Date())!))
-			let events = try tesseraDB.queryEventsBySmartFilter(filters: [filterA, filterB])
-			cliLogger.info("Found \(events.count) events")
-		}
-		
-		@Test func dumbFilter() throws {
-			let filterA = Filter(authors: [aliceEd25519PublicKey], tags: [EventTag(tagName: "a", tagValues: ["Tag0"])])
-			let filterB = Filter(authors: [aliceEd25519PublicKey, bobEd25519PublicKey],
-								 since: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: -50, to: Date())!),
-								 until: NOSTR_date(date: Calendar.current.date(byAdding: .day, value: 50, to: Date())!))
-			let events = try tesseraDB.queryEventsByDumbFilter(filters: [filterA, filterB])
-			cliLogger.info("Found \(events.count) events")
+			let smartEvents = try tesseraDB.queryEventsBySmartFilter(filters: [filterA, filterB])
+			let dumbEvents = try tesseraDB.queryEventsByDumbFilter(filters: [filterA, filterB])
+			cliLogger.info("smartFilter found \(smartEvents.count) events")
+			cliLogger.info("dumbFilter found \(dumbEvents.count) events")
+			// The author/date filter alone must match a substantial share of the 50k events.
+			#expect(dumbEvents.count > 100)
 		}
 		
 		@Test func deleteDatabase() {
@@ -458,28 +472,28 @@ extension TesseraTests {
 		}
 		
 		@Test func encodeDecodeReplaceableKeyEvent() {
-			var replaceableKey = EventTag(identifier: "refMembr", reference: ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: nil))
+			var replaceableKey = ReplaceableKeyTag(name: "refMembr", key: ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: nil))
 			var replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
 			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
 			defer { pointer.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer.baseAddress!)
-			var decodedReplaceableKey = EventTag(RAW_decode: pointer.baseAddress!, count: replaceableKeyLen)!
+			var decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
-			
-			replaceableKey = EventTag(identifier: "refCat", reference: ReplaceableKey(pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey), kind: NOSTR_kind(RAW_native: 100), dTag: nil))
+		
+			replaceableKey = ReplaceableKeyTag(name: "refCat", key: ReplaceableKey(pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey), kind: NOSTR_kind(RAW_native: 100), dTag: nil))
 			replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
 			let pointer2 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
 			defer { pointer2.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer2.baseAddress!)
-			decodedReplaceableKey = EventTag(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
+			decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
-			
-			replaceableKey = EventTag(identifier: "refStat", reference: ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: NOSTR_tag_generic_value("generic")))
+		
+			replaceableKey = ReplaceableKeyTag(name: "refStat", key: ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: DTag(value: "generic")))
 			replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
 			let pointer3 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
 			defer { pointer3.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer3.baseAddress!)
-			decodedReplaceableKey = EventTag(RAW_decode: pointer3.baseAddress!, count: replaceableKeyLen)!
+			decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer3.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
 		}
 	}

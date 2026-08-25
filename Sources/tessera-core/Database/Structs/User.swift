@@ -17,7 +17,7 @@ public struct UserAccessLevel: Sendable, NOSTR_tag_value {
 
 @NostrTag(name: "readAL")
 public struct ReadAccessLevels: Sendable, Hashable, NOSTR_tag {
-	public var indexField = NOSTR_tag_name(string: "readAL")
+	public var indexField = NOSTR_tag_name(string: "readAL")!
 	public var value: UserAccessLevel
 	public init(value: UserAccessLevel) {
 		self.value = value
@@ -26,7 +26,7 @@ public struct ReadAccessLevels: Sendable, Hashable, NOSTR_tag {
 
 @NostrTag(name: "writeAL")
 public struct WriteAccessLevels: Sendable, Hashable, NOSTR_tag {
-	public var indexField = NOSTR_tag_name(string: "writeAL")
+	public var indexField = NOSTR_tag_name(string: "writeAL")!
 	public var value: UserAccessLevel
 	public init(value: UserAccessLevel) {
 		self.value = value
@@ -36,10 +36,10 @@ public struct WriteAccessLevels: Sendable, Hashable, NOSTR_tag {
 /// The basic Tessera user information.
 /// This is the content posted in a kind 0 (profile) note.
 public struct User: RAW_convertible, RAW_accessible {
-	public var userName: EncodedString
+	public var userName: Encoded.String
 	
 	public init(userName:String) {
-		self.userName = EncodedString(userName)
+		self.userName = Encoded.String(userName)
 	}
 	
 	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
@@ -47,7 +47,7 @@ public struct User: RAW_convertible, RAW_accessible {
 		let userNameLength = Int(Bytes2(RAW_staticbuff_seeking: &inputPtr).RAW_native())
 		let dataCount = count - MemoryLayout<Bytes2>.size
 		guard dataCount == userNameLength else { return nil }
-		let userName = EncodedString(RAW_decode: inputPtr, count: userNameLength)
+		let userName = Encoded.String(RAW_decode: inputPtr, count: userNameLength)
 		inputPtr = inputPtr.advanced(by: userNameLength)
 		self.userName = userName
 	}
