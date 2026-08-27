@@ -28,6 +28,7 @@ public func applyTesseraFilter<Content:NOSTR_event_content>(_ event: NOSTR_event
 	}
 	if((filter.ids == [] || filter.ids.contains(event.unsignedEvent.id)) &&
 	   (filter.authors == [] || filter.authors.contains(event.unsignedEvent.publicKey) || filter.authors.contains(author(ofEvent: event))) &&
+	   (filter.applications == [] || filter.applications.contains(event.unsignedEvent.application)) &&
 	   (filter.kinds == [] || filter.kinds.contains(event.unsignedEvent.kind)) &&
 	   (filter.since == nil || filter.since! <= event.unsignedEvent.date) &&
 	   (filter.until == nil || filter.until! >= event.unsignedEvent.date) &&

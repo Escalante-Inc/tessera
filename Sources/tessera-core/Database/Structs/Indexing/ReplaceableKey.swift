@@ -110,27 +110,29 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 	
 	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
 		var inputPtr = inputPtr
-		guard count > MemoryLayout<Encoded.Bool>.size else { return nil }
+		var dataCount = count
+		guard dataCount >= MemoryLayout<Encoded.Bool>.size else { return nil }
 		let pubKeyExists = Encoded.Bool(RAW_staticbuff_seeking: &inputPtr)
-		var dataCount = count - MemoryLayout<Encoded.Bool>.size
+		dataCount -= MemoryLayout<Encoded.Bool>.size
 		if pubKeyExists.bool {
-			guard count >= MemoryLayout<PublicKey>.size else { return nil }
+			guard dataCount >= MemoryLayout<PublicKey>.size else { return nil }
 			self.pubkey = PublicKey(RAW_staticbuff_seeking: &inputPtr)
 			dataCount -= MemoryLayout<PublicKey>.size
 		} else {
 			self.pubkey = nil
 		}
 		
-		guard count >= MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size else { return nil }
+		guard dataCount >= MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size else { return nil }
 		self.kind = NOSTR_kind(RAW_staticbuff_seeking: &inputPtr)
 		let dTagExists = Encoded.Bool(RAW_staticbuff_seeking: &inputPtr)
 		dataCount -= MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size
 		
 		if dTagExists.bool {
+			guard dataCount >= MemoryLayout<Bytes2>.size else { return nil }
 			let dTagLength = Int(Bytes2(RAW_staticbuff_seeking: &inputPtr).RAW_native())
 			dataCount -= MemoryLayout<Bytes2>.size
-			guard dataCount == dTagLength else { return nil }
-			let dTag = DTag(RAW_decode: inputPtr, count: dTagLength)
+			guard dataCount >= dTagLength else { return nil }
+			guard let dTag = DTag(RAW_decode: inputPtr, count: dTagLength) else { return nil }
 			inputPtr = inputPtr.advanced(by: dTagLength)
 			dataCount -= dTagLength
 			self.dTag = dTag

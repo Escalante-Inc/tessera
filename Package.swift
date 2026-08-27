@@ -29,6 +29,7 @@ let package = Package(
 		.package(url:"https://github.com/tannerdsilva/wireguard-swift", revision:"7245b1ee6ecae571318900c4343e97526c67868b"),
 
 		.package(url:"https://github.com/apple/swift-nio.git", "2.81.0"..<"3.0.0"),
+		.package(url:"https://github.com/apple/swift-log.git", "1.0.0"..<"2.0.0"),
 		.package(url:"https://github.com/tannerdsilva/bedrock.git", "7.1.0"..<"8.0.0"),
 
 		.package(url:"https://github.com/swift-server/swift-service-lifecycle.git", "2.6.3"..<"3.0.0"),
@@ -57,10 +58,17 @@ let package = Package(
 			name: "tessera-core",
 			dependencies:[
 				.product(name:"bedrock", package:"bedrock"),
+				.product(name:"bedrock_fifo", package:"bedrock"),
 				.product(name:"RAW", package:"rawdog"),
 				.product(name:"RAW_blake2", package:"rawdog"),
+				.product(name:"RAW_sha256", package:"rawdog"),
+				.product(name:"RAW_dh25519", package:"rawdog"),
+				.product(name:"RAW_ed25519", package:"rawdog"),
+				.product(name:"RAW_base64", package:"rawdog"),
 				.product(name:"QuickLMDB", package:"QuickLMDB"),
 				.product(name:"NIO", package:"swift-nio"),
+				.product(name:"Logging", package:"swift-log"),
+				.product(name:"wireguard-userspace-nio", package:"wireguard-swift"),
 				.product(name:"nostr-kit-swift", package:"nostr-kit-swift"),
 			]
 		),

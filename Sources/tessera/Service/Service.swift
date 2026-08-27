@@ -9,6 +9,45 @@ import bedrock_fifo
 import bedrock
 import RAW
 import RAW_dh25519
+import QuickLMDB
+
+/// Returns an accurate, client-safe description of an internal error, suitable for the
+/// text of a NOTICE message. The full error details are logged server-side (see the
+/// caller); only a concise description of what went wrong is exposed to the client.
+fileprivate func describeErrorForNotice(_ error: Error) -> String {
+	switch error {
+	case AccessLevelError.userDoesNotExist:
+		return "The requesting user does not exist"
+	case AccessLevelError.userHasNoAccessLevels:
+		return "The requesting user has no configured access levels"
+	case AccessLevelError.invalidReadAccess:
+		return "The requesting user does not have read access for the requested kinds"
+	case AccessLevelError.invalidWriteAccess:
+		return "The requesting user does not have write access for this kind"
+	case SignedNoteError.cantStoreEphemeralEvent:
+		return "Ephemeral events cannot be stored"
+	case SignedNoteError.invalidKind5Tag:
+		return "Invalid deletion event: missing or malformed reference tags"
+	case SignedNoteError.invalidKind5PublicKey:
+		return "Deletion event references an event that was not authored by the deleting user"
+	case SignedNoteError.invalidParameterizedEvent:
+		return "Parameterized replaceable event is missing its d-tag"
+	case SignedNoteError.invalidUserNote:
+		return "Invalid user event"
+	case SignedNoteError.invalidAccessLevelNote:
+		return "Invalid access level event"
+	case LMDBError.notFound:
+		return "The requested data was not found"
+	case LMDBError.keyExists:
+		return "An event with this id already exists"
+	case LMDBError.mapFull:
+		return "The server database is full"
+	case LMDBError.mapResized:
+		return "The server database grew beyond its allocated size"
+	default:
+		return "The server could not process the request"
+	}
+}
 
 /// Acts as a wrapper for storing an array of `NOSTR_message_REQ`
 /// ALL requests stored in this actor are considered Active.
@@ -110,6 +149,9 @@ final class TesseraService: Service {
 						
 						func writeToInterface(data: any RAW_convertible) throws {
 							var messageLength = 0; data.RAW_encode(count: &messageLength)
+							if buffer.capacity < messageLength {
+								buffer.reserveCapacity(messageLength + 64)
+							}
 							buffer.withUnsafeMutableWritableBytes { ptr in
 								guard let base = ptr.baseAddress else { return }
 								let ptr = base.assumingMemoryBound(to: UInt8.self)
@@ -129,30 +171,10 @@ final class TesseraService: Service {
 									//
 									// SeeAlso: [https://github.com/bwyma1/nostr-kit-swift/blob/main/Sources/nostr-kit-swift/Message/NOSTR_message.swift]
 									cliLogger.debug("Received incoming data. Checking for NOSTR messages.")
+									// Decode the incoming Wireguard data as a single NOSTR message.
 									var message:NOSTR_message<UnsignedEvent<ByteBuffer>>?
 									incomingSignal.withUnsafeReadableBytes { ptr in
-										// Try EVENT Message
-										do {
-											guard let event = NOSTR_message_EVENT<UnsignedEvent<ByteBuffer>>(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
-												throw NOSTR_message_error.badDecode
-											}
-											message = .EVENT(event)
-										} catch { }
-										// Try REQ Message
-										do {
-											guard let request = NOSTR_message_REQ(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
-												throw NOSTR_message_error.badDecode
-											}
-											message = .REQ(request)
-										} catch { }
-										// Try CLOSE Message
-										do {
-											guard let close = NOSTR_message_CLOSE(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
-												throw NOSTR_message_error.badDecode
-											}
-											message = .CLOSE(close)
-										} catch { }
-										
+										message = NOSTR_message<UnsignedEvent<ByteBuffer>>.decode(ptr)
 									}
 									switch message {
 										case .REQ(let request):
@@ -221,7 +243,8 @@ final class TesseraService: Service {
 								}
 							}
 							catch let error {
-								try writeToInterface(data: NOSTR_message_NOTICE(noticeText: "\(error)"))
+								cliLogger.error("Failed to process incoming data", metadata: ["peer": "\(String(describing: peerInfo.publicKey))", "error": "\(String(describing: error))"])
+								try writeToInterface(data: NOSTR_message_NOTICE(noticeText: describeErrorForNotice(error)))
 							}
 						}
 					}

@@ -461,7 +461,7 @@ extension TesseraTests {
 			_ = replaceableKey.RAW_encode(dest:pointer.baseAddress!)
 			var decodedReplaceableKey = ReplaceableKey(RAW_decode: pointer.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
-			
+		
 			replaceableKey = ReplaceableKey(pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey), kind: NOSTR_kind(RAW_native: 100), dTag: nil)
 			replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
 			let pointer2 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
@@ -469,6 +469,55 @@ extension TesseraTests {
 			_ = replaceableKey.RAW_encode(dest:pointer2.baseAddress!)
 			decodedReplaceableKey = ReplaceableKey(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
+		}
+	
+		@Test func replaceableKeyDecodeRejectsTruncatedInput() {
+			// A key with a pubkey exercises every branch: presence flag, 32-byte pubkey,
+			// kind, d-tag length, and d-tag bytes. Any strict truncation of a pubkey-bearing
+			// key must decode to `nil` — never over-read past the end of the buffer
+			// (regression test for the OOB read fixed by using the remaining `dataCount`
+			// in every guard instead of the original `count`).
+			let fullKey = ReplaceableKey(
+				pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey),
+				kind: NOSTR_kind(RAW_native: 30_000),
+				dTag: DTag(value: "regression-dtag"))
+			var fullLen = 0; fullKey.RAW_encode(count: &fullLen)
+			let buf = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: fullLen)
+			defer { buf.deallocate() }
+			_ = fullKey.RAW_encode(dest: buf.baseAddress!)
+		
+			// Full decode round-trips.
+			#expect(ReplaceableKey(RAW_decode: buf.baseAddress!, count: fullLen) == fullKey)
+		
+			// Every strict truncation returns nil (catches the former OOB over-read
+			// inside the pubkey / kind / d-tag sections).
+			for cut in 1..<fullLen {
+				#expect(ReplaceableKey(RAW_decode: buf.baseAddress!, count: cut) == nil,
+					"truncation at \(cut)/\(fullLen) should decode as nil")
+			}
+		}
+	
+		@Test func applyTesseraFilterRespectsApplications() throws {
+			let keypair = try DatabaseTests.alicePrivateKeyWithKeypair()
+			let event = try UnsignedEvent(
+				publicKey: keypair.publicKey,
+				tags: [],
+				application: 7,
+				kind: 30_000,
+				content: ByteBuffer(string: "app filter test")).sign(as: keypair.privateKey)
+		
+			// A filter scoped to application 7 matches the event.
+			let matchingFilter = Filter(applications: [NOSTR_application(RAW_native: 7)], kinds: [NOSTR_kind(RAW_native: 30_000)])
+			#expect(applyTesseraFilter(event, filter: matchingFilter))
+		
+			// A filter scoped to a different application must NOT match (regression test
+			// for the fan-out path silently ignoring `filter.applications`).
+			let nonMatchingFilter = Filter(applications: [NOSTR_application(RAW_native: 8)], kinds: [NOSTR_kind(RAW_native: 30_000)])
+			#expect(!applyTesseraFilter(event, filter: nonMatchingFilter))
+		
+			// An application-agnostic filter still matches.
+			let emptyAppFilter = Filter(applications: [], kinds: [NOSTR_kind(RAW_native: 30_000)])
+			#expect(applyTesseraFilter(event, filter: emptyAppFilter))
 		}
 		
 		@Test func encodeDecodeReplaceableKeyEvent() {
@@ -479,7 +528,7 @@ extension TesseraTests {
 			_ = replaceableKey.RAW_encode(dest:pointer.baseAddress!)
 			var decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
-		
+	
 			replaceableKey = ReplaceableKeyTag(name: "refCat", key: ReplaceableKey(pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey), kind: NOSTR_kind(RAW_native: 100), dTag: nil))
 			replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
 			let pointer2 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
@@ -487,7 +536,7 @@ extension TesseraTests {
 			_ = replaceableKey.RAW_encode(dest:pointer2.baseAddress!)
 			decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
-		
+	
 			replaceableKey = ReplaceableKeyTag(name: "refStat", key: ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: DTag(value: "generic")))
 			replaceableKeyLen = 0; replaceableKey.RAW_encode(count: &replaceableKeyLen)
 			let pointer3 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
@@ -496,5 +545,189 @@ extension TesseraTests {
 			decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer3.baseAddress!, count: replaceableKeyLen)!
 			#expect(replaceableKey == decodedReplaceableKey)
 		}
+		}
+
+		@Suite("NOSTR Message Decode Tests")
+		struct NOSTRMessageDecodeTests {
+		/// Encodes `value` into a buffer and passes it to `NOSTR_message.decode`.
+		private func decodeEnum<T: RAW_convertible>(_ value: T) -> NOSTR_message<UnsignedEvent<ByteBuffer>>? {
+			var encodedLength = 0
+			value.RAW_encode(count: &encodedLength)
+			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: encodedLength)
+			defer { pointer.deallocate() }
+			_ = value.RAW_encode(dest: pointer.baseAddress!)
+			return NOSTR_message<UnsignedEvent<ByteBuffer>>.decode(UnsafeRawBufferPointer(pointer))
+		}
+
+		@Test func decodeRoundTripREQ() throws {
+			let aliceKeyPair = try DatabaseTests.alicePrivateKeyWithKeypair()
+			let filter = Filter(authors: [aliceKeyPair.publicKey], kinds: [NOSTR_kind(RAW_native: 10000)])
+			let request = NOSTR_message_REQ(subscriptionID: "sub-test", filters: [filter], from: aliceKeyPair.publicKey, fetchHistory: true)
+			let decoded = decodeEnum(request)
+			guard case .REQ(let req) = decoded else {
+				Issue.record("Expected .REQ, got \(String(describing: decoded))")
+				return
+			}
+			#expect(String(req.subscriptionID) == "sub-test")
+			#expect(req.filters.count == 1)
+			#expect(req.fetchHistory.bool)
+		}
+
+		@Test func decodeRoundTripEVENT() throws {
+			let aliceKeyPair = try DatabaseTests.alicePrivateKeyWithKeypair()
+			let signedEvent = try UnsignedEvent(publicKey: aliceKeyPair.publicKey, tags: [DTag(value: "decode-test")], application: 1, kind: 30000, content: ByteBuffer(string: "Hello Tessera")).sign(as: aliceKeyPair.privateKey)
+			let message = NOSTR_message_EVENT<UnsignedEvent<ByteBuffer>>(subscriptionID: "sub-e", event: signedEvent)
+			let decoded = decodeEnum(message)
+			guard case .EVENT(let event) = decoded else {
+				Issue.record("Expected .EVENT, got \(String(describing: decoded))")
+				return
+			}
+			#expect(event.event.unsignedEvent.id == signedEvent.unsignedEvent.id)
+			#expect(event.event.unsignedEvent.content == signedEvent.unsignedEvent.content)
+		}
+
+		@Test func decodeRoundTripEOSE() throws {
+			let eose = NOSTR_message_EOSE(subscriptionID: "sub-eose")
+			let decoded = decodeEnum(eose)
+			guard case .EOSE(let decodedEose) = decoded else {
+				Issue.record("Expected .EOSE, got \(String(describing: decoded))")
+				return
+			}
+			#expect(String(decodedEose.subscriptionID) == "sub-eose")
+		}
+
+		@Test func decodeRoundTripCLOSE() throws {
+			let close = NOSTR_message_CLOSE(subscriptionID: "sub-close")
+			let decoded = decodeEnum(close)
+			guard case .CLOSE(let decodedClose) = decoded else {
+				Issue.record("Expected .CLOSE, got \(String(describing: decoded))")
+				return
+			}
+			#expect(String(decodedClose.subscriptionID) == "sub-close")
+		}
+
+		@Test func decodeRoundTripNOTICE() throws {
+			let notice = NOSTR_message_NOTICE(noticeText: "User lacks write access credentials")
+			let decoded = decodeEnum(notice)
+			guard case .NOTICE(let decodedNotice) = decoded else {
+				Issue.record("Expected .NOTICE, got \(String(describing: decoded))")
+				return
+			}
+			#expect(decodedNotice.noticeText == "User lacks write access credentials")
+		}
+
+		@Test func decodeRoundTripOK() throws {
+			let ok = NOSTR_message_OK(eventID: NOSTR_id(RAW_staticbuff: NOSTR_id.RAW_staticbuff_zeroed()), status: true)
+			let decoded = decodeEnum(ok)
+			guard case .OK(let decodedOK) = decoded else {
+				Issue.record("Expected .OK, got \(String(describing: decoded))")
+				return
+			}
+			#expect(decodedOK.status)
+		}
+
+		@Test func decodeRejectsGarbage() {
+			// A 4-byte block of 0xFF is not a valid type tag for any message type.
+			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 4)
+			defer { pointer.deallocate() }
+			pointer[0] = 0xFF; pointer[1] = 0xFF; pointer[2] = 0xFF; pointer[3] = 0xFF
+			#expect(NOSTR_message<UnsignedEvent<ByteBuffer>>.decode(UnsafeRawBufferPointer(pointer)) == nil)
+		}
+
+		@Test func decodeRejectsEmpty() {
+			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 0)
+			defer { pointer.deallocate() }
+			#expect(NOSTR_message<UnsignedEvent<ByteBuffer>>.decode(UnsafeRawBufferPointer(pointer)) == nil)
+		}
+		}
+
+		@Suite("Tessera Client API Tests")
+		struct TesseraClientAPITests {
+		@Test func receiverStoreDefaults() {
+			let receiver = TesseraClientReceiverStore()
+			#expect(receiver.references.isEmpty)
+			#expect(receiver.deletionEventIds.isEmpty)
+			#expect(receiver.referenceNeeds.isEmpty)
+			#expect(receiver.models.isEmpty)
+		}
+
+		@Test func receiverStoreHoldsModels() {
+			let receiver = TesseraClientReceiverStore()
+			let model = ExampleModel()
+			receiver.models.append(model)
+			#expect(receiver.models.count == 1)
+		}
+
+		@Test func modelBaseClassDefaults() {
+			let model = ExampleModel()
+			#expect(model.subscriptionIDs.isEmpty)
+			model.subscriptionIDs = ["sub-model"]
+			#expect(model.modelStorage.isEmpty)
+			#expect(model.latestByReplaceableKey.isEmpty)
+			#expect(model.historyByReplaceableKey.isEmpty)
+		}
+
+		@Test func modelStoresEvents() throws {
+			let aliceKeyPair = try DatabaseTests.alicePrivateKeyWithKeypair()
+			var model = ExampleModel()
+			model.subscriptionIDs = ["sub-model"]
+			let signedEvent = try UnsignedEvent(publicKey: aliceKeyPair.publicKey, tags: [DTag(value: "stored")], application: 0, kind: 30000, content: ByteBuffer(string: "stored content")).sign(as: aliceKeyPair.privateKey)
+			let message = NOSTR_message_EVENT<UnsignedEvent<ByteBuffer>>(subscriptionID: "sub-model", event: signedEvent)
+			var encodedLength = 0
+			message.RAW_encode(count: &encodedLength)
+			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: encodedLength)
+			defer { pointer.deallocate() }
+			_ = message.RAW_encode(dest: pointer.baseAddress!)
+			try model.decodeEventAndUpsert(ptr: UnsafeRawBufferPointer(pointer))
+			#expect(model.modelStorage[signedEvent.unsignedEvent.id] != nil)
+			#expect(model.latestEvents().count == 1)
+		}
+
+		@Test func clientConfigurationFromBase64() throws {
+			let myWGPrivateKey = DatabaseTests.aliceStaticPrivateKey
+			let publicKey = PublicKey(privateKey: myWGPrivateKey)
+			let publicKeyBase64 = String(RAW_base64.encode(publicKey))
+			let privateKeyBase64 = String(RAW_base64.encode(myWGPrivateKey))
+			let config = TesseraClientConfiguration(serverIP: "127.0.0.1", serverPort: 41411, serverPublicKeyBase64: publicKeyBase64, myPrivateKeyBase64: privateKeyBase64)
+			#expect(config != nil)
+			#expect(config?.serverIP == "127.0.0.1")
+			#expect(config?.serverPort == 41411)
+		}
+
+		@Test func clientConfigurationRejectsBadBase64() {
+			let config = TesseraClientConfiguration(serverIP: "127.0.0.1", serverPort: 41411, serverPublicKeyBase64: "not-base64!", myPrivateKeyBase64: "also-not")
+			#expect(config == nil)
+		}
+
+		@Test func clientSessionDeletionEvent() throws {
+			let myWGPrivateKey = DatabaseTests.aliceStaticPrivateKey
+			let serverPublicKey = PublicKey(privateKey: myWGPrivateKey)
+			let client = TesseraClient(serverIP: "127.0.0.1", serverPort: 41411, serverPublicKey: serverPublicKey, myPrivateKey: myWGPrivateKey)
+			let session = TesseraSession(client: client, application: 1, myNostrPublicKey: serverPublicKey)
+			// TesseraSession.delete() must build a kind-5 unsigned event before signing;
+			// exercising construction requires a live tunnel, so verify the session wiring
+			// is present: the session owns the client and receiver it was given.
+			#expect(session.client === client)
+			#expect(session.receiver.models.isEmpty)
+			#expect(session.application == 1)
+			#expect(session.myNostrPublicKey == serverPublicKey)
+		}
 	}
 }
+
+/// A helper pairing a WireGuard key with a derived Nostr keypair, independent of the
+/// database test's private-key constants.
+extension TesseraTests.DatabaseTests {
+	fileprivate static func alicePrivateKeyWithKeypair() throws -> (publicKey: PublicKey, privateKey: MemoryGuarded<Ed25519.PrivateKey>) {
+		let wgKey = Self.aliceStaticPrivateKey
+		let (nostrPublic, nostrPrivate) = try Ed25519.generateKeys(secretKey: wgKey)
+		return (nostrPublic, nostrPrivate)
+	}
+}
+
+/// A stand-in content type for model tests.
+@RAW_convertible_string_type<UTF8>(backing:RAW_byte.self)
+struct ExampleContent: NOSTR_event_content {}
+
+/// A minimal model subclass used to exercise `TesseraModel` storage.
+final class ExampleModel: TesseraModel<ExampleContent> {}
