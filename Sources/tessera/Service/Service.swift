@@ -147,7 +147,7 @@ final class TesseraService: Service {
 					foo.addTask {
 						var buffer = ByteBufferAllocator().buffer(capacity: 1024)
 						
-						func writeToInterface(data: any RAW_convertible) throws {
+						func writeToInterface(publicKey: PublicKey, data: any RAW_convertible) throws {
 							var messageLength = 0; data.RAW_encode(count: &messageLength)
 							if buffer.capacity < messageLength {
 								buffer.reserveCapacity(messageLength + 64)
@@ -158,7 +158,7 @@ final class TesseraService: Service {
 								_ = data.RAW_encode(dest: ptr)
 							}
 							buffer.moveWriterIndex(forwardBy: messageLength)
-							try WGInterface<KCPChannels>.write(channel: channel, publicKey: peerInfo.publicKey, data: buffer)
+							try WGInterface<KCPChannels>.write(channel: channel, publicKey: publicKey, data: buffer)
 							buffer.clear(minimumCapacity: 1024)
 						}
 						let iterator = peerInfo.inboundData?.makeAsyncConsumer()
@@ -192,11 +192,11 @@ final class TesseraService: Service {
 											cliLogger.debug("Found \(signedEvents.count) events from REQ Message")
 											for event in signedEvents {
 												let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
-												try writeToInterface(data: outgoingEventMessage)
+												try writeToInterface(publicKey: peerInfo.publicKey, data: outgoingEventMessage)
 											}
-											
+					
 											let eoseMsg = NOSTR_message_EOSE(subscriptionID: request.subscriptionID)
-											try writeToInterface(data: eoseMsg)
+											try writeToInterface(publicKey: peerInfo.publicKey, data: eoseMsg)
 											
 										case .EVENT(let incomingEventMessage):
 											cliLogger.debug("Processing EVENT Message")
@@ -208,16 +208,54 @@ final class TesseraService: Service {
 											do {
 												try tesseraDB.scribeNewEvent(signedEvent: event, logLevel: cliLogger.logLevel)
 											} catch AccessLevelError.invalidWriteAccess {
-												try writeToInterface(data: NOSTR_message_NOTICE(noticeText: "User lacks write access credentials"))
+												try writeToInterface(publicKey: peerInfo.publicKey, data: NOSTR_message_NOTICE(noticeText: "User lacks write access credentials"))
 											}
-											
+									
 											if event.unsignedEvent.kind.RAW_native() == 5 {
-												cliLogger.debug("Deletion event, sending newly written event")
-												let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: "", event: event)
-												try writeToInterface(data: outgoingEventMessage)
+												cliLogger.debug("Deletion event, fanning out to matching subscriptions")
+
+												// NIP-09: a deletion event targets the events references by its `e` tags.
+												// Peers whose active subscriptions match those deleted events must be told
+												// to purge them locally, just as they were told about the events themselves.
+												// (The referenced events remain in the store — removal is applied at query
+												// time — so they can be loaded to evaluate subscription filters against.)
+												var referencedEvents: [TesseraSignedEvent] = []
+												for tag in event.unsignedEvent.tags.array {
+													guard let eventRefTag = tag.unwrap(as: EventRefTag.self) else { continue }
+													// Scribe validated these exist, but skip defensively if it was force-removed.
+													if let referenced = try? tesseraDB.queryEventID(eventRefTag.value) {
+														referencedEvents.append(referenced)
+													}
+												}
+
+												var publisherCovered = false
+												let allRequests = await nostrRequests.all()
+												for (peerKey, requests) in allRequests {
+													for request in requests {
+														cliLogger.debug("Checking if request filter matches deletion message")
+														// Deliver if the subscription matches the deletion event itself
+														// (e.g. `kinds: [5]`) OR any of the events it references (NIP-09),
+														// so a subscriber of the deleted event's kind/author also hears about it.
+														let matches = eventMatchesFilters(event, filters: request.filters, logLevel: cliLogger.logLevel)
+															|| referencedEvents.contains { eventMatchesFilters($0, filters: request.filters, logLevel: cliLogger.logLevel) }
+														if matches {
+															cliLogger.debug("Request filter matched deletion, sending newly written event")
+															let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
+															try writeToInterface(publicKey: peerKey, data: outgoingEventMessage)
+															if peerKey == peerInfo.publicKey {
+																publisherCovered = true
+															}
+														}
+													}
+												}
+												// Always acknowledge the deletion to the publisher (purges its local
+												// model) even when it holds no matching active subscription.
+												if !publisherCovered {
+													try writeToInterface(publicKey: peerInfo.publicKey, data: NOSTR_message_EVENT(subscriptionID: "", event: event))
+												}
 											} else {
 												let allRequests = await nostrRequests.all()
-												for (_, requests) in allRequests {
+												for (peerKey, requests) in allRequests {
 													for request in requests {
 														cliLogger.debug("Checking if request filter matches message")
 														// If the event matches any current filters, then send it over.
@@ -225,7 +263,7 @@ final class TesseraService: Service {
 														if(eventMatchesFilters(event, filters: request.filters, logLevel: cliLogger.logLevel)) {
 															cliLogger.debug("Request filter matched, sending newly written event")
 															let outgoingEventMessage = NOSTR_message_EVENT(subscriptionID: request.subscriptionID, event: event)
-															try writeToInterface(data: outgoingEventMessage)
+															try writeToInterface(publicKey: peerKey, data: outgoingEventMessage)
 														}
 													}
 												}
@@ -244,7 +282,7 @@ final class TesseraService: Service {
 							}
 							catch let error {
 								cliLogger.error("Failed to process incoming data", metadata: ["peer": "\(String(describing: peerInfo.publicKey))", "error": "\(String(describing: error))"])
-								try writeToInterface(data: NOSTR_message_NOTICE(noticeText: describeErrorForNotice(error)))
+								try writeToInterface(publicKey: peerInfo.publicKey, data: NOSTR_message_NOTICE(noticeText: describeErrorForNotice(error)))
 							}
 						}
 					}

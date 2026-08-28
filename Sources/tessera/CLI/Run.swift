@@ -38,7 +38,7 @@ struct CLI:AsyncParsableCommand {
 			abstract:"Generate a new WireGuard key pair."
 		)
 		func run() throws {
-			let pk = try MemoryGuarded<PrivateKey>.new()
+			let pk = try MemoryGuarded<RAW_dh25519.PrivateKey>.new()
 			let (publicKey, privateKey) = (PublicKey(privateKey:pk), pk)
 			let publicKeyBase64 = String(RAW_base64.encode(publicKey))
 			let privateKeyBase64 = String(RAW_base64.encode(privateKey))
@@ -56,7 +56,7 @@ struct CLI:AsyncParsableCommand {
 		var myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 		
 		func run() throws {
-			let (publicKey, privateKey) = try Ed25519.generateKeys(secretKey: myPrivateKey)
+			let (publicKey, privateKey) = try RAW_ed25519.generateKeys(secretKey: myPrivateKey)
 			let publicKeyBase64 = String(RAW_base64.encode(publicKey))
 			let privateKeyBase64 = String(RAW_base64.encode(privateKey))
 			print("Public Key: \(publicKeyBase64)")
@@ -166,7 +166,7 @@ struct CLI:AsyncParsableCommand {
 
 		func run() async throws {
 			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
-			let (signingPubKey, signingPrivKey) = try Ed25519.generateKeys(secretKey: myPrivateKey)
+			let (signingPubKey, signingPrivKey) = try RAW_ed25519.generateKeys(secretKey: myPrivateKey)
 			
 			let userEvent = try UnsignedEvent(publicKey: signingPubKey,
 											  tags: [StringTag(name: "userName", value: adminName)!,

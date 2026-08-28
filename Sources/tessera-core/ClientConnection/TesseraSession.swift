@@ -88,9 +88,60 @@ public final class TesseraSession: @unchecked Sendable {
 		try await client.write(message)
 	}
 
+	/// Builds, signs, and publishes an event with the given content, kind, and tags.
+	///
+	/// This is the sheltered counterpart to `delete(eventID:signedBy:)`: it replaces
+	/// hand-assembling `UnsignedEvent<ByteBuffer>`, `ByteBuffer(string:)`, `DTag(value:)`,
+	/// and `NOSTR_date` in application code. The session's own public key and application
+	/// id are used, the event is dated now, the id is computed from the fields, and the
+	/// event is signed with the supplied Nostr private key before being sent.
+	///
+	/// The content is generic over `NOSTR_event_content`, so any RAW-encodable payload
+	/// works — `ByteBuffer`, a custom `@RAW_convertible_string_type` type, or (via the
+	/// `String` overload below) plain text.
+	public func publish<ContentType: NOSTR_event_content>(
+		content: ContentType,
+		kind: UInt32,
+		tags: [any NOSTR_tag] = [],
+		signedBy myNostrPrivateKey: MemoryGuarded<RAW_ed25519.PrivateKey>
+	) async throws {
+		let signedEvent = try makeSignedEvent(content: content, kind: kind, tags: tags, signedBy: myNostrPrivateKey)
+		try await writeSignedEvent(signedEvent)
+	}
+
+	/// Convenience overload of `publish(content:kind:tags:signedBy:)` for the most
+	/// common case: a plain `String`, wrapped into a `ByteBuffer` automatically.
+	public func publish(
+		content: String,
+		kind: UInt32,
+		tags: [any NOSTR_tag] = [],
+		signedBy myNostrPrivateKey: MemoryGuarded<RAW_ed25519.PrivateKey>
+	) async throws {
+		let signedEvent = try makeSignedEvent(content: ByteBuffer(string: content), kind: kind, tags: tags, signedBy: myNostrPrivateKey)
+		try await writeSignedEvent(signedEvent)
+	}
+
+	/// Builds and signs an event (dated now) without sending it.
+	internal func makeSignedEvent<ContentType: NOSTR_event_content>(
+		content: ContentType,
+		kind: UInt32,
+		tags: [any NOSTR_tag],
+		signedBy myNostrPrivateKey: MemoryGuarded<RAW_ed25519.PrivateKey>
+	) throws -> NOSTR_event_signed<UnsignedEvent<ContentType>> {
+		let unsigned = try UnsignedEvent<ContentType>(publicKey: myNostrPublicKey, tags: tags, application: application, kind: kind, content: content
+		)
+		return try unsigned.sign(as: myNostrPrivateKey)
+	}
+
+	/// Encodes a signed event as an EVENT message and writes it to the server.
+	private func writeSignedEvent<ContentType: NOSTR_event_content>(_ signedEvent: NOSTR_event_signed<UnsignedEvent<ContentType>>) async throws {
+		let message = NOSTR_message_EVENT(subscriptionID: "", event: signedEvent)
+		try await client.write(message)
+	}
+
 	/// Builds, signs, and publishes a deletion event (kind 5) for the given event id.
 	/// - Throws: any error from event construction or signing.
-	public func delete(eventID: NOSTR_id, signedBy myNostrPrivateKey: MemoryGuarded<Ed25519.PrivateKey>) async throws {
+	public func delete(eventID: NOSTR_id, signedBy myNostrPrivateKey: MemoryGuarded<RAW_ed25519.PrivateKey>) async throws {
 		let unsigned = try UnsignedEvent<ByteBuffer>(publicKey: myNostrPublicKey,
 													 tags: [EventRefTag(value: eventID)],
 													 application: application,

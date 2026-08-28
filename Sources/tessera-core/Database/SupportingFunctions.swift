@@ -67,7 +67,7 @@ public func author<Content:NOSTR_event_content>(ofEvent event: NOSTR_event_signe
 	return event.unsignedEvent.publicKey
 }
 
-internal func createNewUpdatedEvent<Content:NOSTR_event_content>(_ event: NOSTR_event_signed<UnsignedEvent<Content>>, adminSigningKey:MemoryGuarded<Ed25519.PrivateKey>, addTags: [any NOSTR_tag]?, removeTags: [any NOSTR_tag]?, overwriteTags: [any NOSTR_tag]?, content: Content?) throws -> NOSTR_event_signed<UnsignedEvent<Content>> {
+internal func createNewUpdatedEvent<Content:NOSTR_event_content>(_ event: NOSTR_event_signed<UnsignedEvent<Content>>, adminSigningKey:MemoryGuarded<RAW_ed25519.PrivateKey>, addTags: [any NOSTR_tag]?, removeTags: [any NOSTR_tag]?, overwriteTags: [any NOSTR_tag]?, content: Content?) throws -> NOSTR_event_signed<UnsignedEvent<Content>> {
 	let eventContent = content ?? event.unsignedEvent.content
 	var eventTags: [any NOSTR_tag] = []
 	if let overwriteTags {

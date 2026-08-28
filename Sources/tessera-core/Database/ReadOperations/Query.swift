@@ -139,24 +139,25 @@ extension TesseraDB {
 				}
 			}
 			
-			// Events gathered for: since < creation date < until
+			// Events gathered for: since <= creation date <= until
 			if filter.since != nil || filter.until != nil {
 				dateIds = Set<NOSTR_id>()
 				do {
 					try dateIndex.cursor(tx: tx) { cursor in
 						// The date index is sorted ascending by `NOSTR_date`. Iterate it in order,
-						// collecting ids whose date falls within [since, until). `opFirst`/`opNext`
+						// collecting ids whose date falls within [since, until]. Both bounds are
+						// inclusive, matching NIP-01 and `applyTesseraFilter`. `opFirst`/`opNext`
 						// return a catchable `notFound` at the boundaries (unlike `opSet`/`opSetRange`,
 						// which fatal the process via a `RAW_access` `try!` when a key is absent).
 						let since = filter.since ?? NOSTR_date(date: Date(timeIntervalSince1970: 0))
 						var (key, val) = try cursor.opFirst()
-						if key >= since && (filter.until == nil || key < filter.until!) {
+						if key >= since && (filter.until == nil || key <= filter.until!) {
 							dateIds.insert(val)
 						}
 						while let (nextKey, nextVal) = try? cursor.opNext() {
 							key = nextKey
 							val = nextVal
-							if let until = filter.until, key >= until {
+							if let until = filter.until, key > until {
 								break
 							}
 							if key >= since {
@@ -231,8 +232,16 @@ extension TesseraDB {
 		var queriedEvents:[TesseraSignedEvent] = []
 		try signedEvents.cursor(tx:newTrans) { cursor in
 			for id in allFilterIds {
+				// `filter.ids` are vetted against the index DBs below, but the ids field itself
+				// is taken verbatim from the filter and may reference events that were never
+				// stored (or were force-deleted). Guard before `opSet` so a single stale id can't
+				// abort the whole query (NIP-01: missing ids are simply skipped).
+				guard try cursor.containsEntry(key: id) else { continue }
 				queriedEvents.append(try cursor.opSet(key: id))
 			}
+		}
+		if let limit = filters.first?.limit?.RAW_native() {
+			queriedEvents = Array(queriedEvents.sorted { $0.unsignedEvent.date > $1.unsignedEvent.date }.prefix(Int(limit)))
 		}
 		if let user = user {
 			let uniqueKinds = Array(Set(queriedEvents.map { $0.unsignedEvent.kind }))
@@ -242,7 +251,7 @@ extension TesseraDB {
 		}
 		return queriedEvents
 	}
-	
+
 	/// Filters out all events from the database that match the given filters.
 	/// Follows the NOSTR protocol where the filters use an OR function and each filter's fields use an AND function.
 	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
@@ -290,6 +299,9 @@ extension TesseraDB {
 		var queriedEvents:[TesseraSignedEvent] = []
 		try signedEvents.cursor(tx:newTrans) { cursor in
 			for id in allFilterIds {
+				// `filter.ids` may reference events that were never stored or were force-deleted;
+				// skip such ids rather than letting a single stale id abort the whole query.
+				guard try cursor.containsEntry(key: id) else { continue }
 				queriedEvents.append(try cursor.opSet(key: id))
 			}
 		}

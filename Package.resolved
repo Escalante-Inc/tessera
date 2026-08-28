@@ -1,15 +1,6 @@
 {
-  "originHash" : "3da694f10328a04d74f4ec9a0081f7c67594ef46dd5b8ceaf820a4ecce4de4bd",
+  "originHash" : "850a6f34f63f76063d57e4fddd701e228370d3d4b08367086f25816cc7f2d50b",
   "pins" : [
-    {
-      "identity" : "bedrock",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tannerdsilva/bedrock.git",
-      "state" : {
-        "revision" : "2bfa90251ccb094592ce0ddf1e38b0075f96af7d",
-        "version" : "7.1.0"
-      }
-    },
     {
       "identity" : "clmdb",
       "kind" : "remoteSourceControl",
@@ -20,20 +11,12 @@
       }
     },
     {
-      "identity" : "quicklmdb",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tannerdsilva/QuickLMDB.git",
-      "state" : {
-        "revision" : "980d58655a9535ef8f88e1215f998cf96239b848",
-        "version" : "14.0.0"
-      }
-    },
-    {
       "identity" : "rawdog",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tannerdsilva/rawdog.git",
       "state" : {
-        "revision" : "1c4966c72102fc01b169cbc18ee5f0be10d802de"
+        "revision" : "378e87e49d2cf95c92882b1bcbe21252c5c1d0a6",
+        "version" : "21.0.0"
       }
     },
     {
@@ -115,14 +98,6 @@
       "state" : {
         "revision" : "7c6ad0fc39d0763e0b699210e4124afd5041c5df",
         "version" : "1.6.4"
-      }
-    },
-    {
-      "identity" : "wireguard-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tannerdsilva/wireguard-swift",
-      "state" : {
-        "revision" : "7245b1ee6ecae571318900c4343e97526c67868b"
       }
     }
   ],

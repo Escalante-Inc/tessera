@@ -44,21 +44,21 @@ extension TesseraTests {
 		let base = Path(FileManager.default.homeDirectoryForCurrentUser.path)
 		let tesseraDB:TesseraDB
 		
-		static let aliceStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI="), count:32)!
-		static let bobStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A="), count:32)!
-		static let adminStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4="), count:32)!
+		static let aliceStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI="), count:32)!
+		static let bobStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A="), count:32)!
+		static let adminStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4="), count:32)!
 
 		let aliceEd25519PublicKey:PublicKey
-		let aliceEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
-		let alicePrivateKey:MemoryGuarded<PrivateKey>
+		let aliceEd25519PrivateKey:MemoryGuarded<RAW_ed25519.PrivateKey>
+		let alicePrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 		
 		let bobEd25519PublicKey:PublicKey
-		let bobEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
-		let bobPrivateKey:MemoryGuarded<PrivateKey>
+		let bobEd25519PrivateKey:MemoryGuarded<RAW_ed25519.PrivateKey>
+		let bobPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 		
 		let adminEd25519PublicKey:PublicKey
-		let adminEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
-		let adminPrivateKey:MemoryGuarded<PrivateKey>
+		let adminEd25519PrivateKey:MemoryGuarded<RAW_ed25519.PrivateKey>
+		let adminPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 		
 		let aliceSignedEvent: NOSTR_event_signed<UnsignedEvent<ByteBuffer>>
 		let bobSignedEvent: NOSTR_event_signed<UnsignedEvent<ByteBuffer>>
@@ -75,9 +75,9 @@ extension TesseraTests {
 			alicePrivateKey = Self.aliceStaticPrivateKey
 			bobPrivateKey = Self.bobStaticPrivateKey
 			adminPrivateKey = Self.adminStaticPrivateKey
-			(aliceEd25519PublicKey, aliceEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: alicePrivateKey)
-			(bobEd25519PublicKey, bobEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: bobPrivateKey)
-			(adminEd25519PublicKey, adminEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: adminPrivateKey)
+			(aliceEd25519PublicKey, aliceEd25519PrivateKey) = try RAW_ed25519.generateKeys(secretKey: alicePrivateKey)
+			(bobEd25519PublicKey, bobEd25519PrivateKey) = try RAW_ed25519.generateKeys(secretKey: bobPrivateKey)
+			(adminEd25519PublicKey, adminEd25519PrivateKey) = try RAW_ed25519.generateKeys(secretKey: adminPrivateKey)
 			// Ensure a fresh database for this suite instance. Swift Testing may create multiple
 			// instances of this suite (one per test), so a leftover DB would cause duplicate-key
 			// failures on the shared `~/tessera.mdb`.
@@ -323,6 +323,137 @@ extension TesseraTests {
 				_ = try tesseraDB.queryEventsBySmartFilter(filters: [filter], user: bobEd25519PublicKey)
 			}
 		}
+
+		@Test func smartFilterUntilBoundaryIsInclusive() throws {
+			// NIP-01: `until` is an inclusive upper bound, and `applyTesseraFilter` (live
+			// fan-out) already uses `<=`. The history query previously used an exclusive `key <
+			// until`, so an event created exactly at the `until` timestamp was dropped from
+			// history but pushed live. Both paths must agree.
+			let boundaryDate = Calendar.current.date(byAdding: .hour, value: -3, to: Date())!
+			let boundary = NOSTR_date(date: boundaryDate)
+			// Kind 5000 is non-replaceable, so the smart filter never needs a d-tag for it.
+			let boundaryEvent = try UnsignedEvent(
+				publicKey: aliceEd25519PublicKey, date: boundary,
+				tags: [], application: 0, kind: 5_000,
+				content: ByteBuffer(string: "boundary event")).sign(as: aliceEd25519PrivateKey)
+			try tesseraDB.scribeNewEvent(signedEvent: boundaryEvent, logLevel: .trace)
+
+			// Event at exactly `until` must be returned.
+			let untilOnly = Filter(until: boundary)
+			let untilEvents = try tesseraDB.queryEventsBySmartFilter(filters: [untilOnly])
+			#expect(untilEvents.contains { $0.unsignedEvent.id == boundaryEvent.unsignedEvent.id })
+
+			// Event at exactly `since` AND `until` (single instant) must be returned.
+			let clamped = Filter(since: boundary, until: boundary)
+			let clampedEvents = try tesseraDB.queryEventsBySmartFilter(filters: [clamped])
+			#expect(clampedEvents.contains { $0.unsignedEvent.id == boundaryEvent.unsignedEvent.id })
+
+			// An event created strictly after the `until` bound must be excluded.
+			let laterEvent = try UnsignedEvent(
+				publicKey: aliceEd25519PublicKey, date: NOSTR_date(date: boundaryDate.addingTimeInterval(3 * 60 * 60)),
+				tags: [], application: 0, kind: 5_000,
+				content: ByteBuffer(string: "later event")).sign(as: aliceEd25519PrivateKey)
+			try tesseraDB.scribeNewEvent(signedEvent: laterEvent, logLevel: .trace)
+			let bounded = try tesseraDB.queryEventsBySmartFilter(filters: [Filter(until: boundary)])
+			#expect(!bounded.contains { $0.unsignedEvent.id == laterEvent.unsignedEvent.id })
+			#expect(bounded.contains { $0.unsignedEvent.id == boundaryEvent.unsignedEvent.id })
+		}
+
+		@Test func forceUpdateEventRewritesIndexes() throws {
+			// Fresh event so the test is independent of other tests' mutations of the
+			// shared suite database (a prior test may have force-deleted aliceSignedEvent).
+			let original = try UnsignedEvent(
+				publicKey: aliceEd25519PublicKey,
+				tags: [], application: 0, kind: 5_000,
+				content: ByteBuffer(string: "Original Content")).sign(as: aliceEd25519PrivateKey)
+			try tesseraDB.scribeNewEvent(signedEvent: original, logLevel: .trace)
+			let originalID = original.unsignedEvent.id
+
+			tesseraDB.forceUpdateEvent(id: originalID, admin: adminEd25519PrivateKey, newContent: ByteBuffer(string: "Rewritten Content"))
+
+			// Original id must no longer exist in the main store.
+			let byOriginalID = try tesseraDB.queryEventsBySmartFilter(filters: [Filter(ids: [originalID])])
+			#expect(!byOriginalID.contains { $0.unsignedEvent.id == originalID })
+
+			// The rewritten event (same kind, uri-relevant fields, fresh id + content) must be
+			// reachable through the kind index — it must not be invisible to queries.
+			let byKind = try tesseraDB.queryEventsBySmartFilter(filters: [Filter(kinds: [NOSTR_kind(RAW_native: 5_000)])])
+			#expect(byKind.contains { $0.unsignedEvent.content == ByteBuffer(string: "Rewritten Content") })
+			#expect(!byKind.contains { $0.unsignedEvent.id == originalID })
+			#expect(!byKind.contains { $0.unsignedEvent.content == ByteBuffer(string: "Original Content") })
+		}
+
+		@Test func forceUpdateEventFilteredRewritesIndexes() throws {
+			// Scribe two fresh events so the filter selects exactly these.
+			let originalA = try UnsignedEvent(
+				publicKey: aliceEd25519PublicKey,
+				tags: [], application: 0, kind: 5_000,
+				content: ByteBuffer(string: "A Original")).sign(as: aliceEd25519PrivateKey)
+			let originalB = try UnsignedEvent(
+				publicKey: bobEd25519PublicKey,
+				tags: [], application: 0, kind: 5_000,
+				content: ByteBuffer(string: "B Original")).sign(as: bobEd25519PrivateKey)
+			try tesseraDB.scribeNewEvent(signedEvent: originalA, logLevel: .trace)
+			try tesseraDB.scribeNewEvent(signedEvent: originalB, logLevel: .trace)
+			let idA = originalA.unsignedEvent.id
+			let idB = originalB.unsignedEvent.id
+
+			tesseraDB.forceUpdateEventFiltered(
+				filters: [Filter(ids: [idA, idB])],
+				admin: adminEd25519PrivateKey,
+				newContent: ByteBuffer(string: "Filtered Rewrite"))
+
+			// Both originals gone, both rewrites reachable through the kind index.
+			let byKind = try tesseraDB.queryEventsBySmartFilter(filters: [Filter(kinds: [NOSTR_kind(RAW_native: 5_000)])])
+			#expect(!byKind.contains { $0.unsignedEvent.id == idA })
+			#expect(!byKind.contains { $0.unsignedEvent.id == idB })
+			#expect(byKind.filter { $0.unsignedEvent.content == ByteBuffer(string: "Filtered Rewrite") }.count == 2)
+		}
+
+		@Test func smartFilterSkipsMissingIds() throws {
+			// A filter whose `ids` field references an event that was never stored must not
+			// abort the whole query — NIP-01 requires missing ids to be skipped while the
+			// stored ids are still returned.
+			let fresh = try UnsignedEvent(
+				publicKey: aliceEd25519PublicKey,
+				tags: [], application: 0, kind: 7_000,
+				content: ByteBuffer(string: "kept event")).sign(as: aliceEd25519PrivateKey)
+			try tesseraDB.scribeNewEvent(signedEvent: fresh, logLevel: .trace)
+			let freshID = fresh.unsignedEvent.id
+
+			let missing = NOSTR_id(RAW_staticbuff: NOSTR_id.RAW_staticbuff_zeroed())
+			let filter = Filter(ids: [freshID, missing])
+			let events = try tesseraDB.queryEventsBySmartFilter(filters: [filter])
+			#expect(events.count == 1)
+			#expect(events[0].unsignedEvent.id == freshID)
+
+			// Same for the dumb (history) path.
+			let dumbEvents = try tesseraDB.queryEventsByDumbFilter(filters: [filter])
+			#expect(dumbEvents.count == 1)
+			#expect(dumbEvents[0].unsignedEvent.id == freshID)
+		}
+
+		@Test func dumbFilterHonorsLimit() throws {
+			// Scribe three events it can limit against, so the test doesn't depend on how
+			// many events other tests left in the shared database.
+			var scribedIDs: [NOSTR_id] = []
+			for i in 0..<3 {
+				let event = try UnsignedEvent(
+					publicKey: aliceEd25519PublicKey,
+					tags: [], application: 0, kind: 8_000,
+					content: ByteBuffer(string: "limit event \(i)")).sign(as: aliceEd25519PrivateKey)
+				try tesseraDB.scribeNewEvent(signedEvent: event, logLevel: .trace)
+				scribedIDs.append(event.unsignedEvent.id)
+			}
+
+			// The history path previously ignored `limit` entirely (only the smart filter
+			// applied it), so a history REQ could return the full database. It must honor the
+			// limit and return the newest events first, like the smart path.
+			let filter = Filter(ids: scribedIDs, limit: NOSTR_filter_limit(RAW_native: 2))
+			let events = try tesseraDB.queryEventsByDumbFilter(filters: [filter])
+			#expect(events.count == 2)
+			#expect(events[0].unsignedEvent.date >= events[1].unsignedEvent.date)
+		}
 	}
 }
 
@@ -333,21 +464,21 @@ extension TesseraTests {
 		let base = Path(FileManager.default.homeDirectoryForCurrentUser.path)
 		let tesseraDB:TesseraDB
 		
-		static let aliceStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI="), count:32)!
-		static let bobStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A="), count:32)!
-		static let adminStaticPrivateKey = MemoryGuarded<PrivateKey>(RAW_decode:try! RAW_base64.decode("EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4="), count:32)!
+		static let aliceStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI="), count:32)!
+		static let bobStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A="), count:32)!
+		static let adminStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4="), count:32)!
 
 		let aliceEd25519PublicKey:PublicKey
-		let aliceEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
-		let alicePrivateKey:MemoryGuarded<PrivateKey>
+		let aliceEd25519PrivateKey:MemoryGuarded<RAW_ed25519.PrivateKey>
+		let alicePrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 		
 		let bobEd25519PublicKey:PublicKey
-		let bobEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
-		let bobPrivateKey:MemoryGuarded<PrivateKey>
+		let bobEd25519PrivateKey:MemoryGuarded<RAW_ed25519.PrivateKey>
+		let bobPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 		
 		let adminEd25519PublicKey:PublicKey
-		let adminEd25519PrivateKey:MemoryGuarded<Ed25519.PrivateKey>
-		let adminPrivateKey:MemoryGuarded<PrivateKey>
+		let adminEd25519PrivateKey:MemoryGuarded<RAW_ed25519.PrivateKey>
+		let adminPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 		
 		init() throws {
 			var buildLogger = Logger(label:"\(String(describing:Self.self))")
@@ -356,9 +487,9 @@ extension TesseraTests {
 			alicePrivateKey = Self.aliceStaticPrivateKey
 			bobPrivateKey = Self.bobStaticPrivateKey
 			adminPrivateKey = Self.adminStaticPrivateKey
-			(aliceEd25519PublicKey, aliceEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: alicePrivateKey)
-			(bobEd25519PublicKey, bobEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: bobPrivateKey)
-			(adminEd25519PublicKey, adminEd25519PrivateKey) = try Ed25519.generateKeys(secretKey: adminPrivateKey)
+			(aliceEd25519PublicKey, aliceEd25519PrivateKey) = try RAW_ed25519.generateKeys(secretKey: alicePrivateKey)
+			(bobEd25519PublicKey, bobEd25519PrivateKey) = try RAW_ed25519.generateKeys(secretKey: bobPrivateKey)
+			(adminEd25519PublicKey, adminEd25519PrivateKey) = try RAW_ed25519.generateKeys(secretKey: adminPrivateKey)
 			// Ensure a fresh database for this suite instance. Swift Testing may create multiple
 			// instances of this suite (one per test), so a leftover DB would cause duplicate-key
 			// failures on the shared `~/tessera.mdb`.
@@ -712,15 +843,48 @@ extension TesseraTests {
 			#expect(session.application == 1)
 			#expect(session.myNostrPublicKey == serverPublicKey)
 		}
+
+		@Test func publishConvenienceBuildsAndSignsStringEvent() throws {
+			let keyPair = try DatabaseTests.alicePrivateKeyWithKeypair()
+			let client = TesseraClient(serverIP: "127.0.0.1", serverPort: 41411, serverPublicKey: keyPair.publicKey, myPrivateKey: DatabaseTests.aliceStaticPrivateKey)
+			let session = TesseraSession(client: client, application: 7, myNostrPublicKey: keyPair.publicKey)
+
+			// The String convenience wraps plain text into a ByteBuffer before signing;
+			// makeSignedEvent(content:) is exercised here with that exact wrapped value.
+			let signed = try session.makeSignedEvent(content: ByteBuffer(string: "hello tessera"), kind: 3001, tags: [DTag(value: "demo")], signedBy: keyPair.privateKey)
+
+			#expect(signed.isValidSignature())
+			#expect(signed.unsignedEvent.publicKey == keyPair.publicKey)
+			#expect(signed.unsignedEvent.application.RAW_native() == 7)
+			#expect(signed.unsignedEvent.kind.RAW_native() == 3001)
+			// The String content is wrapped into a ByteBuffer automatically.
+			let contentString = String(decoding: signed.unsignedEvent.content.readableBytesView, as: UTF8.self)
+			#expect(contentString == "hello tessera")
+		}
+
+		@Test func publishConvenienceIsGenericOverContentType() throws {
+			let keyPair = try DatabaseTests.alicePrivateKeyWithKeypair()
+			let client = TesseraClient(serverIP: "127.0.0.1", serverPort: 41411, serverPublicKey: keyPair.publicKey, myPrivateKey: DatabaseTests.aliceStaticPrivateKey)
+			let session = TesseraSession(client: client, application: 3, myNostrPublicKey: keyPair.publicKey)
+
+			// A non-ByteBuffer content type: nostr-kit's StringContent.
+			let content = StringContent("custom content")
+			let signed = try session.makeSignedEvent(content: content, kind: 3002, tags: [DTag(value: "gen")], signedBy: keyPair.privateKey)
+
+			#expect(signed.isValidSignature())
+			#expect(signed.unsignedEvent.kind.RAW_native() == 3002)
+			#expect(signed.unsignedEvent.application.RAW_native() == 3)
+			#expect(signed.unsignedEvent.content == content)
+		}
 	}
 }
 
 /// A helper pairing a WireGuard key with a derived Nostr keypair, independent of the
 /// database test's private-key constants.
 extension TesseraTests.DatabaseTests {
-	fileprivate static func alicePrivateKeyWithKeypair() throws -> (publicKey: PublicKey, privateKey: MemoryGuarded<Ed25519.PrivateKey>) {
+	fileprivate static func alicePrivateKeyWithKeypair() throws -> (publicKey: PublicKey, privateKey: MemoryGuarded<RAW_ed25519.PrivateKey>) {
 		let wgKey = Self.aliceStaticPrivateKey
-		let (nostrPublic, nostrPrivate) = try Ed25519.generateKeys(secretKey: wgKey)
+		let (nostrPublic, nostrPrivate) = try RAW_ed25519.generateKeys(secretKey: wgKey)
 		return (nostrPublic, nostrPrivate)
 	}
 }
