@@ -95,12 +95,17 @@ final class TesseraService: Service {
 	let configurationPath:Path
 	let myPort:Int
 	let myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
+	/// How often (in seconds) the service attempts a negentropy reconciliation
+	/// round with each peer flagged as a tessera. The first round runs immediately
+	/// on startup; subsequent rounds run every `syncInterval` seconds.
+	let syncInterval:TimeInterval
 	
-	init(databasePath:Path, configurationPath:Path, myPort:Int, myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>) {
+	init(databasePath:Path, configurationPath:Path, myPort:Int, myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>, syncInterval:TimeInterval = 30) {
 		self.databasePath = databasePath
 		self.configurationPath = configurationPath
 		self.myPort = myPort
 		self.myPrivateKey = myPrivateKey
+		self.syncInterval = syncInterval
 	}
 	
 	func run() async throws {
@@ -122,12 +127,16 @@ final class TesseraService: Service {
 				// These peers include other tessera devices and applications (users).
 				// Then start the primary Wireguard interface.
 				// There is one Wireguard interface for all connections (peers). (might change)
-				// (maybe need to have different interface for tessera vs applications)
-				var peerInfos:[PeerInfo] = []
+				//
+				// Each peer may be another tessera (isTessera) or an application/user.
+				// Tessera peers participate in negentropy synchronization; each gets a
+				// dedicated sync FIFO that the per-peer task feeds negentropy frames into.
+				var peerInfos:[(peer: TesseraPeer, syncFIFO: FIFO<ByteBuffer, Swift.Error>?)] = []
 				for peer in cfg.peers {
-					peerInfos.append(PeerInfo(publicKey:peer.publicKey, endpoint: peer.endpoint, internalKeepAlive: peer.internalKeepAlive, inboundData: FIFO<ByteBuffer, Swift.Error>()))
+					let peerInfo = TesseraPeer(publicKey: peer.publicKey, sharedKey: peer.sharedKey, endpoint: peer.endpoint, internalKeepAlive: peer.internalKeepAlive, isTessera: peer.isTessera, inboundData: FIFO<ByteBuffer, Swift.Error>())
+					peerInfos.append((peerInfo, peer.isTessera ? FIFO<ByteBuffer, Swift.Error>() : nil))
 				}
-				let myInterface = try WGInterface<KCPChannels>(staticPrivateKey: self.myPrivateKey, mtu:1400, initialConfiguration:peerInfos, logLevel:.info, listeningPort: self.myPort)
+				let myInterface = try WGInterface<KCPChannels>(staticPrivateKey: self.myPrivateKey, mtu:1400, initialConfiguration: peerInfos.map { $0.peer }, logLevel:.info, listeningPort: self.myPort)
 				
 				foo.addTask {
 					try await myInterface.run()
@@ -143,7 +152,28 @@ final class TesseraService: Service {
 				// - Receiving requests from applications (users).
 				// - Receiving request closures from applications (users).
 				// - Sending signed events to tessera via sync or applications (users) via requests.
-				for peerInfo in peerInfos {
+				// Negentropy frames ("NEGT" magic) from a peer flagged as a tessera are
+				// routed into that peer's dedicated sync FIFO for reconciliation.
+				let syncGate = SyncGate()
+				let myPublicKey = PublicKey(privateKey: self.myPrivateKey)
+				for (peerInfo, syncFIFO) in peerInfos {
+					// Start the negentropy sync loop for peers that are other tesserae.
+					// Peers that are not flagged as tesserae never sync (the share
+					// subscription fan-out remains their only data path).
+					if peerInfo.isTessera, let syncFIFO {
+						let negentropyManager = NegentropySyncManager(
+							tesseraDB: tesseraDB,
+							channel: channel,
+							myPublicKey: myPublicKey,
+							peer: peerInfo,
+							syncFIFO: syncFIFO,
+							logLevel: cliLogger.logLevel,
+							interval: self.syncInterval
+						)
+						foo.addTask {
+							try await negentropyManager.runForever(gate: syncGate)
+						}
+					}
 					foo.addTask {
 						var buffer = ByteBufferAllocator().buffer(capacity: 1024)
 						
@@ -165,6 +195,14 @@ final class TesseraService: Service {
 						while !Task.isCancelled {
 							do {
 								if let incomingSignal = try await iterator?.next(whenTaskCancelled: .finish) {
+									
+									// Route negentropy sync frames to the sync manager.
+									// Non-tessera peers are not expected to send these; they
+									// simply fail NOSTR decoding and are ignored below.
+									if let syncFIFO, isNegentropyFrame(incomingSignal) {
+										syncFIFO.yield(incomingSignal)
+										continue
+									}
 									
 									// Try to decode the incoming Wireguard data.
 									// Try deciding as every different possible Nostr message type.

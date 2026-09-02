@@ -9,14 +9,14 @@ import bedrock
 import wireguard_userspace_nio
 
 struct WireguardConfig: Codable {
-	var peers: [PeerInfo] = []
+	var peers: [TesseraPeer] = []
 	enum CodingKeys: String, CodingKey { case peers }
 	
 	init(){}
 
 	init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
-		peers = try container.decodeIfPresent([PeerInfo].self, forKey: .peers) ?? []
+		peers = try container.decodeIfPresent([TesseraPeer].self, forKey: .peers) ?? []
 	}
 }
 
@@ -77,6 +77,8 @@ extension CLI {
 			var port:Int? = nil
 			@Option(help: "The internal keep-alive time of the peer (seconds).")
 			var keepAlive:Int64? = nil
+			@Option(help: "True if this peer is another tessera instance. Other tessera peers participate in automatic negentropy database sync; regular peers (applications) do not.")
+			var tessera: Bool = false
 			
 			@Argument(help: "The public key of the peer.")
 			var publicKey:PublicKey
@@ -90,13 +92,13 @@ extension CLI {
 				try editConfig(at: configurationURL) { cfg in
 					if let existingIndex = cfg.peers.firstIndex(where: { $0.publicKey == publicKey }) {
 						if overwrite {
-							cfg.peers[existingIndex] = PeerInfo(publicKey:publicKey, ipAddress: ipAddress, port:port, internalKeepAlive:keepAliveTime, inboundData: nil)
+							cfg.peers[existingIndex] = TesseraPeer(publicKey:publicKey, ipAddress: ipAddress, port:port, internalKeepAlive:keepAliveTime, isTessera: tessera, inboundData: nil)
 							logger.info("Overwriting peer in configuration")
 						} else {
 							logger.info("Peer already exists in configuration")
 						}
 					} else {
-						cfg.peers.append(PeerInfo(publicKey:publicKey, ipAddress: ipAddress, port:port, internalKeepAlive:keepAliveTime, inboundData: nil))
+						cfg.peers.append(TesseraPeer(publicKey:publicKey, ipAddress: ipAddress, port:port, internalKeepAlive:keepAliveTime, isTessera: tessera, inboundData: nil))
 						logger.info("Adding peer to configuration")
 					}
 				}
@@ -147,7 +149,7 @@ extension CLI {
 
 				let cfg = try loadConfig(from: configurationURL)
 				for peer in cfg.peers {
-					logger.info("Public Key:\(String(describing: peer.publicKey)), IP Address, Port:\(String(describing:peer.endpoint)), KeepAlive:\(String(describing: peer.internalKeepAlive))")
+					logger.info("Public Key:\(String(describing: peer.publicKey)), IP Address, Port:\(String(describing:peer.endpoint)), KeepAlive:\(String(describing: peer.internalKeepAlive)), Tessera:\(peer.isTessera)")
 				}
 			}
 		}

@@ -57,8 +57,8 @@ public struct TesseraDB:Sendable {
 		}
 	}
 	
-	public init(base:Path, memoryMapSize:size_t, logLevel:Logger.Level) throws {
-		let finalPath = base.appendingPathComponent("tessera.mdb")
+	public init(base:Path, memoryMapSize:size_t, logLevel:Logger.Level, environment:String = "tessera") throws {
+		let finalPath = base.appendingPathComponent("\(environment).mdb")
 		var log = Logger(label:"\(String(describing:Self.self))")
 		log.logLevel = logLevel
 		self.log = log

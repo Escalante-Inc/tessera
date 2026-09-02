@@ -230,10 +230,12 @@ struct CLI:AsyncParsableCommand {
 		var myPort:Int
 		@Argument(help:"My private key for the Wireguard interface.")
 		var myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
+		@Option(help:"How often (in seconds) to reconcile with tessera peers via negentropy. Defaults to 30 seconds. Set to 0 to disable syncing.")
+		var syncInterval:TimeInterval = 30
 
 		func run() async throws {
 			let logger = Logger(label: "tessera-server")
-			let tesseraService = TesseraService(databasePath: databasePath, configurationPath: configurationPath, myPort: myPort, myPrivateKey: myPrivateKey)
+			let tesseraService = TesseraService(databasePath: databasePath, configurationPath: configurationPath, myPort: myPort, myPrivateKey: myPrivateKey, syncInterval: syncInterval)
 			try await ServiceGroup(services:[tesseraService], logger: logger).run()
 		}
 	}

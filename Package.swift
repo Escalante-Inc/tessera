@@ -29,6 +29,7 @@ let package = Package(
 	],
 	dependencies:[
 		.package(url:"https://github.com/tannerdsilva/rawdog.git", "21.0.0"..<"22.0.0"),
+//		.package(path:"../rawdog"),
 //		.package(url:"https://github.com/tannerdsilva/QuickLMDB.git", "14.0.0"..<"15.0.0"),
 		.package(path: "../QuickLMDB"),
 //		.package(url:"https://github.com/bwyma1/nostr-kit-swift", revision:"383708d31328ebecb806ace03b035203395198de"),
@@ -36,6 +37,7 @@ let package = Package(
 		.package(path:"../openpgp-kit-swift"),
 		//.package(url:"https://github.com/tannerdsilva/wireguard-swift", revision:"7245b1ee6ecae571318900c4343e97526c67868b"),
 		.package(path:"../wireguard-swift"),
+		.package(path:"../negentropy-swift"),
 
 		.package(url:"https://github.com/apple/swift-nio.git", "2.81.0"..<"3.0.0"),
 		.package(url:"https://github.com/apple/swift-log.git", "1.0.0"..<"2.0.0"),
@@ -59,6 +61,7 @@ let package = Package(
 				.product(name:"ServiceLifecycle", package:"swift-service-lifecycle"),
 				.product(name:"ArgumentParser", package:"swift-argument-parser"),
 				.product(name:"wireguard-userspace-nio", package:"wireguard-swift"),
+				.product(name:"negentropy-swift", package:"negentropy-swift"),
 				.product(name: "openpgp-kit", package: "openpgp-kit-swift"),
 				"tessera-core"
 			],
@@ -80,6 +83,7 @@ let package = Package(
 				.product(name:"Logging", package:"swift-log"),
 				.product(name:"wireguard-userspace-nio", package:"wireguard-swift"),
 				.product(name:"nostr-kit-swift", package:"nostr-kit-swift"),
+				.product(name:"negentropy-swift", package:"negentropy-swift"),
 			]
 		),
 		.target(
