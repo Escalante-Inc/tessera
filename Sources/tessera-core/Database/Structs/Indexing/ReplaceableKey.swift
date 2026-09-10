@@ -13,14 +13,15 @@ public struct ReplaceableKeyTag: Sendable, Hashable, NOSTR_tag {
 	}
 }
 	
-extension ReplaceableKeyTag: RAW_convertible {
-	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
-		var dataCount = count
+extension ReplaceableKeyTag: RAW_decodable, RAW_encodable {
+	public init?(RAW_decode buffer:UnsafeRawBufferPointer) {
+		var seekPtr = buffer.baseAddress!
+		var dataCount = buffer.count
 		guard dataCount >= MemoryLayout<NOSTR_tag_name>.size else {
 			return nil
 		}
 
-		self.indexField = NOSTR_tag_name(RAW_staticbuff_seeking: &inputPtr)
+		self.indexField = NOSTR_tag_name(RAW_staticbuff_seeking: &seekPtr)
 		dataCount -= MemoryLayout<NOSTR_tag_name>.size
 		guard let indexString = indexField.string else { return nil }
 		guard indexString.starts(with: "ref") else { return nil }
@@ -29,12 +30,12 @@ extension ReplaceableKeyTag: RAW_convertible {
 			return nil
 		}
 		dataCount -= MemoryLayout<Bytes4>.size
-		let length = Int(Bytes4(RAW_staticbuff_seeking: &inputPtr).RAW_native())
+		let length = Int(Bytes4(RAW_staticbuff_seeking: &seekPtr).RAW_native())
 		guard dataCount >= length else {
 			return nil
 		}
 		dataCount -= length
-		guard let value = ReplaceableKey(RAW_decode: inputPtr, count: length) else {
+		guard let value = ReplaceableKey(RAW_decode: UnsafeRawBufferPointer(start: seekPtr, count: length)) else {
 			return nil
 		}
 		guard dataCount == 0 else {
@@ -42,7 +43,7 @@ extension ReplaceableKeyTag: RAW_convertible {
 		}
 		self.value = value
 	}
-	public func RAW_encode(count: inout RAW.size_t) {
+	public func RAW_encode(count: inout Int) {
 		count += MemoryLayout<NOSTR_tag_name>.size + MemoryLayout<Bytes4>.size
 		value.RAW_encode(count: &count)
 	}
@@ -57,9 +58,15 @@ extension ReplaceableKeyTag: RAW_convertible {
 
 		return dest
 	}
+	@discardableResult
+	public func RAW_encode(_: UnsafeMutableRawPointer.Type, destination: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer {
+		return UnsafeMutableRawPointer(RAW_encode(dest: destination.assumingMemoryBound(to: UInt8.self)))
+	}
+
+
 }
 
-public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_convertible, NOSTR_tag_value {
+public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_decodable, RAW_encodable, NOSTR_tag_value {
 	let pubkey: PublicKey?
 	let kind: NOSTR_kind
 	let dTag: DTag?
@@ -98,8 +105,8 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 	}
 	
 	public init?(tagValue: any NOSTR_tag_value) {
-		let key = tagValue.RAW_access { ptr in
-			ReplaceableKey(RAW_decode: ptr.baseAddress!, count: ptr.count)
+		let key = tagValue.RAW_access_immutable(UnsafeRawBufferPointer.self) { buff in
+			ReplaceableKey(RAW_decode: buff)
 		}
 		if key == nil {
 			return nil
@@ -108,32 +115,32 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 		}
 	}
 	
-	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
-		var inputPtr = inputPtr
-		var dataCount = count
+	public init?(RAW_decode buffer:UnsafeRawBufferPointer) {
+		var seekPtr = buffer.baseAddress!
+		var dataCount = buffer.count
 		guard dataCount >= MemoryLayout<Encoded.Bool>.size else { return nil }
-		let pubKeyExists = Encoded.Bool(RAW_staticbuff_seeking: &inputPtr)
+		let pubKeyExists = Encoded.Bool(RAW_staticbuff_seeking: &seekPtr)
 		dataCount -= MemoryLayout<Encoded.Bool>.size
 		if pubKeyExists.bool {
 			guard dataCount >= MemoryLayout<PublicKey>.size else { return nil }
-			self.pubkey = PublicKey(RAW_staticbuff_seeking: &inputPtr)
+			self.pubkey = PublicKey(RAW_staticbuff_seeking: &seekPtr)
 			dataCount -= MemoryLayout<PublicKey>.size
 		} else {
 			self.pubkey = nil
 		}
 		
 		guard dataCount >= MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size else { return nil }
-		self.kind = NOSTR_kind(RAW_staticbuff_seeking: &inputPtr)
-		let dTagExists = Encoded.Bool(RAW_staticbuff_seeking: &inputPtr)
+		self.kind = NOSTR_kind(RAW_staticbuff_seeking: &seekPtr)
+		let dTagExists = Encoded.Bool(RAW_staticbuff_seeking: &seekPtr)
 		dataCount -= MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size
 		
 		if dTagExists.bool {
 			guard dataCount >= MemoryLayout<Bytes2>.size else { return nil }
-			let dTagLength = Int(Bytes2(RAW_staticbuff_seeking: &inputPtr).RAW_native())
+			let dTagLength = Int(Bytes2(RAW_staticbuff_seeking: &seekPtr).RAW_native())
 			dataCount -= MemoryLayout<Bytes2>.size
 			guard dataCount >= dTagLength else { return nil }
-			guard let dTag = DTag(RAW_decode: inputPtr, count: dTagLength) else { return nil }
-			inputPtr = inputPtr.advanced(by: dTagLength)
+			guard let dTag = DTag(RAW_decode: UnsafeRawBufferPointer(start: seekPtr, count: dTagLength)) else { return nil }
+			seekPtr = seekPtr.advanced(by: dTagLength)
 			dataCount -= dTagLength
 			self.dTag = dTag
 		} else {
@@ -142,7 +149,7 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 		guard dataCount == 0 else { return nil }
 	}
 	
-	public func RAW_encode(count: inout RAW.size_t) {
+	public func RAW_encode(count: inout Int) {
 		count += MemoryLayout<NOSTR_kind>.size + MemoryLayout<Encoded.Bool>.size * 2
 		if pubkey != nil {
 			count += MemoryLayout<PublicKey>.size
@@ -174,6 +181,11 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 			dest = Encoded.Bool(false).RAW_encode(dest: dest)
 		}
 		return dest
+	}
+	
+	@discardableResult
+	public func RAW_encode(_: UnsafeMutableRawPointer.Type, destination: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer {
+		return UnsafeMutableRawPointer(RAW_encode(dest: destination.assumingMemoryBound(to: UInt8.self)))
 	}
 	
 	public static var MDB_compare_f: MDB_compare_ftype {
@@ -212,8 +224,8 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 			return false
 		case let (l?, r?):
 			var equal = true
-			l.RAW_access { lPtr in
-				r.RAW_access { rPtr in
+			l.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { lPtr in
+				r.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { rPtr in
 					if lPtr.count != rPtr.count {
 						equal = false
 						return
@@ -235,7 +247,7 @@ public struct ReplaceableKey: Hashable, MDB_comparable, RAW_accessible, RAW_conv
 		}
 		hasher.combine(1 as UInt8)
 
-		dTag.RAW_access { ptr in
+		dTag.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { ptr in
 			hasher.combine(ptr.count)
 			for byte in ptr {
 				hasher.combine(byte)

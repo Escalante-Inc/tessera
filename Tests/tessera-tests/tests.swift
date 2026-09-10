@@ -10,6 +10,14 @@ import bedrock
 import nostr_kit_swift
 @testable import tessera_core
 
+/// Decodes a base64-encoded static private key via the v22 buffer API.
+/// The decoded array is held in a local so the pointer stays valid for the
+/// duration of the decode (avoids the dangling-temporary pitfall).
+internal func memoryGuardedKey(fromBase64 base64: String) -> MemoryGuarded<RAW_dh25519.PrivateKey> {
+	let bytes = try! RAW_base64.decode(base64)
+	return MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode: bytes.withUnsafeBytes { $0 })!
+}
+
 /// Builds a string-valued `EventTag` with the given index field (tag name).
 /// These are the only tags that `tagIndex` stores, so tag-filter queries rely on them.
 fileprivate func genericRefTag(_ name: String, _ value: String) -> EventTag {
@@ -44,9 +52,9 @@ extension TesseraTests {
 		let base = Path(FileManager.default.homeDirectoryForCurrentUser.path)
 		let tesseraDB:TesseraDB
 		
-		static let aliceStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI="), count:32)!
-		static let bobStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A="), count:32)!
-		static let adminStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4="), count:32)!
+		static let aliceStaticPrivateKey = memoryGuardedKey(fromBase64: "8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI=")
+		static let bobStaticPrivateKey = memoryGuardedKey(fromBase64: "SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A=")
+		static let adminStaticPrivateKey = memoryGuardedKey(fromBase64: "EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4=")
 
 		let aliceEd25519PublicKey:PublicKey
 		let aliceEd25519PrivateKey:MemoryGuarded<RAW_ed25519.PrivateKey>
@@ -421,7 +429,7 @@ extension TesseraTests {
 			try tesseraDB.scribeNewEvent(signedEvent: fresh, logLevel: .trace)
 			let freshID = fresh.unsignedEvent.id
 
-			let missing = NOSTR_id(RAW_staticbuff: NOSTR_id.RAW_staticbuff_zeroed())
+			let missing = NOSTR_id(RAW_decode: [UInt8](repeating:0, count:32).withUnsafeBytes { $0 })!
 			let filter = Filter(ids: [freshID, missing])
 			let events = try tesseraDB.queryEventsBySmartFilter(filters: [filter])
 			#expect(events.count == 1)
@@ -464,9 +472,9 @@ extension TesseraTests {
 		let base = Path(FileManager.default.homeDirectoryForCurrentUser.path)
 		let tesseraDB:TesseraDB
 		
-		static let aliceStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI="), count:32)!
-		static let bobStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A="), count:32)!
-		static let adminStaticPrivateKey = MemoryGuarded<RAW_dh25519.PrivateKey>(RAW_decode:try! RAW_base64.decode("EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4="), count:32)!
+		static let aliceStaticPrivateKey = memoryGuardedKey(fromBase64: "8DFnI7tPWLl4WmuEp4T5KVuKMW6iyjRdTb3IVaDe+kI=")
+		static let bobStaticPrivateKey = memoryGuardedKey(fromBase64: "SD/y8yQa/DgiYRnDI9vJEiGezNn4yLd/4yL9OLnej0A=")
+		static let adminStaticPrivateKey = memoryGuardedKey(fromBase64: "EEug1Qbe4WjR1TDq4iN4Ce4Rh5iN4aDR407/e5bQgW4=")
 
 		let aliceEd25519PublicKey:PublicKey
 		let aliceEd25519PrivateKey:MemoryGuarded<RAW_ed25519.PrivateKey>
@@ -558,7 +566,7 @@ extension TesseraTests {
 			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: byteBufferLen)
 			defer { pointer.deallocate() }
 			_ = byteBuffer.RAW_encode(dest:pointer.baseAddress!)
-			let decodedByteBuffer = ByteBuffer(RAW_decode: pointer.baseAddress!, count: byteBufferLen)!
+			let decodedByteBuffer = ByteBuffer(RAW_decode: UnsafeRawBufferPointer(pointer))!
 			#expect(byteBuffer == decodedByteBuffer)
 		}
 		
@@ -568,7 +576,7 @@ extension TesseraTests {
 			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: userLen)
 			defer { pointer.deallocate() }
 			_ = user.RAW_encode(dest:pointer.baseAddress!)
-			let decodedUser = User(RAW_decode: pointer.baseAddress!, count: userLen)!
+			let decodedUser = User(RAW_decode: UnsafeRawBufferPointer(pointer))!
 			#expect(user.userName == decodedUser.userName)
 		}
 		
@@ -578,7 +586,7 @@ extension TesseraTests {
 			let buffer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: userLen)
 			defer { buffer.deallocate() }
 			_ = user.RAW_encode(dest:buffer.baseAddress!)
-			user.RAW_access { ptr in
+			user.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { ptr in
 				#expect(ptr.count == buffer.count)
 				#expect(memcmp(ptr.baseAddress!, buffer.baseAddress!, buffer.count) == 0)
 			}
@@ -590,7 +598,7 @@ extension TesseraTests {
 			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
 			defer { pointer.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer.baseAddress!)
-			var decodedReplaceableKey = ReplaceableKey(RAW_decode: pointer.baseAddress!, count: replaceableKeyLen)!
+			var decodedReplaceableKey = ReplaceableKey(RAW_decode: UnsafeRawBufferPointer(pointer))!
 			#expect(replaceableKey == decodedReplaceableKey)
 		
 			replaceableKey = ReplaceableKey(pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey), kind: NOSTR_kind(RAW_native: 100), dTag: nil)
@@ -598,7 +606,7 @@ extension TesseraTests {
 			let pointer2 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
 			defer { pointer2.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer2.baseAddress!)
-			decodedReplaceableKey = ReplaceableKey(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
+			decodedReplaceableKey = ReplaceableKey(RAW_decode: UnsafeRawBufferPointer(pointer2))!
 			#expect(replaceableKey == decodedReplaceableKey)
 		}
 	
@@ -618,12 +626,12 @@ extension TesseraTests {
 			_ = fullKey.RAW_encode(dest: buf.baseAddress!)
 		
 			// Full decode round-trips.
-			#expect(ReplaceableKey(RAW_decode: buf.baseAddress!, count: fullLen) == fullKey)
+			#expect(ReplaceableKey(RAW_decode: UnsafeRawBufferPointer(buf)) == fullKey)
 		
 			// Every strict truncation returns nil (catches the former OOB over-read
 			// inside the pubkey / kind / d-tag sections).
 			for cut in 1..<fullLen {
-				#expect(ReplaceableKey(RAW_decode: buf.baseAddress!, count: cut) == nil,
+				#expect(ReplaceableKey(RAW_decode: UnsafeRawBufferPointer(rebasing: UnsafeRawBufferPointer(buf)[0..<cut])) == nil,
 					"truncation at \(cut)/\(fullLen) should decode as nil")
 			}
 		}
@@ -657,7 +665,7 @@ extension TesseraTests {
 			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
 			defer { pointer.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer.baseAddress!)
-			var decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer.baseAddress!, count: replaceableKeyLen)!
+			var decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: UnsafeRawBufferPointer(pointer))!
 			#expect(replaceableKey == decodedReplaceableKey)
 	
 			replaceableKey = ReplaceableKeyTag(name: "refCat", key: ReplaceableKey(pubkey: PublicKey(privateKey: DatabaseTests.aliceStaticPrivateKey), kind: NOSTR_kind(RAW_native: 100), dTag: nil))
@@ -665,7 +673,7 @@ extension TesseraTests {
 			let pointer2 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
 			defer { pointer2.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer2.baseAddress!)
-			decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer2.baseAddress!, count: replaceableKeyLen)!
+			decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: UnsafeRawBufferPointer(pointer2))!
 			#expect(replaceableKey == decodedReplaceableKey)
 	
 			replaceableKey = ReplaceableKeyTag(name: "refStat", key: ReplaceableKey(pubkey: nil, kind: NOSTR_kind(RAW_native: 100), dTag: DTag(value: "generic")))
@@ -673,7 +681,7 @@ extension TesseraTests {
 			let pointer3 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: replaceableKeyLen)
 			defer { pointer3.deallocate() }
 			_ = replaceableKey.RAW_encode(dest:pointer3.baseAddress!)
-			decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: pointer3.baseAddress!, count: replaceableKeyLen)!
+			decodedReplaceableKey = ReplaceableKeyTag(RAW_decode: UnsafeRawBufferPointer(pointer3))!
 			#expect(replaceableKey == decodedReplaceableKey)
 		}
 		}
@@ -681,7 +689,7 @@ extension TesseraTests {
 		@Suite("NOSTR Message Decode Tests")
 		struct NOSTRMessageDecodeTests {
 		/// Encodes `value` into a buffer and passes it to `NOSTR_message.decode`.
-		private func decodeEnum<T: RAW_convertible>(_ value: T) -> NOSTR_message<UnsignedEvent<ByteBuffer>>? {
+		private func decodeEnum<T: RAW_decodable & RAW_encodable>(_ value: T) -> NOSTR_message<UnsignedEvent<ByteBuffer>>? {
 			var encodedLength = 0
 			value.RAW_encode(count: &encodedLength)
 			let pointer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: encodedLength)
@@ -748,7 +756,7 @@ extension TesseraTests {
 		}
 
 		@Test func decodeRoundTripOK() throws {
-			let ok = NOSTR_message_OK(eventID: NOSTR_id(RAW_staticbuff: NOSTR_id.RAW_staticbuff_zeroed()), status: true)
+			let ok = NOSTR_message_OK(eventID: NOSTR_id(RAW_decode: [UInt8](repeating:0, count:32).withUnsafeBytes { $0 })!, status: true)
 			let decoded = decodeEnum(ok)
 			guard case .OK(let decodedOK) = decoded else {
 				Issue.record("Expected .OK, got \(String(describing: decoded))")

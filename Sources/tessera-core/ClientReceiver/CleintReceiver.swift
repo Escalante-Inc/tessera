@@ -11,7 +11,7 @@ public protocol TesseraClientReceiver {
 extension TesseraClientReceiver {
 	// Initially decodes the message so that we can see the id, kind, tags, ...
 	public func decode(ptr: UnsafeRawBufferPointer) throws -> NOSTR_message_EVENT<UnsignedEvent<ByteBuffer>> {
-		guard let msg = NOSTR_message_EVENT<UnsignedEvent<ByteBuffer>>(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
+		guard let msg = NOSTR_message_EVENT<UnsignedEvent<ByteBuffer>>(RAW_decode: ptr) else {
 			throw NOSTR_message_error.badDecode
 		}
 //		guard msg.event.isValidSignature() else {

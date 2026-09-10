@@ -9,7 +9,7 @@ extension RAW_dh25519.PublicKey:@retroactive ExpressibleByArgument {
 		guard let bytes = rawBytes, bytes.count == 32 else {
 			return nil
 		}
-		self = RAW_dh25519.PublicKey(RAW_staticbuff:bytes)
+		self = RAW_dh25519.PublicKey(RAW_decode: bytes.withUnsafeBytes { $0 })!
 	}
 }
 
@@ -19,6 +19,9 @@ extension MemoryGuarded<RAW_dh25519.PrivateKey>:@retroactive ExpressibleByArgume
 		guard let bytes = rawBytes, bytes.count == 32 else {
 			return nil
 		}
-		self.init(RAW_decode:bytes, count:32)
+		let buffer = UnsafeMutableRawPointer.allocate(byteCount: bytes.count, alignment: 1)
+		buffer.copyMemory(from: bytes, byteCount: bytes.count)
+		defer { buffer.deallocate() }
+		self.init(RAW_decode: UnsafeRawBufferPointer(start: buffer, count: bytes.count))!
 	}
 }

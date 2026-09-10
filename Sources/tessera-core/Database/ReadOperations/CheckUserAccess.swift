@@ -19,7 +19,7 @@ extension TesseraDB {
 			throw AccessLevelError.userHasNoAccessLevels
 		}
 		let userAccess = userAccessTag.value
-		return userAccess.RAW_access { ptr in
+		return userAccess.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { ptr in
 			var allowedKinds:[NOSTR_kind] = []
 			for kind in kinds {
 				guard kind.RAW_native() >= 40_000 else { allowedKinds.append(kind); continue }
@@ -44,7 +44,7 @@ extension TesseraDB {
 			throw AccessLevelError.userHasNoAccessLevels
 		}
 		let userAccess = userAccessTag.value
-		return userAccess.RAW_access { ptr in
+		return userAccess.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { ptr in
 			for kind in kinds {
 				guard kind.RAW_native() >= 40_000 else { continue }
 				let index = rangeIndex(for: Int(kind.RAW_native()))
@@ -68,7 +68,7 @@ extension TesseraDB {
 			throw AccessLevelError.userHasNoAccessLevels
 		}
 		let userAccess = userAccessTag.value
-		return userAccess.RAW_access { ptr in
+		return userAccess.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { ptr in
 			guard kind.RAW_native() >= 40_000 else { return true }
 			let index = rangeIndex(for: Int(kind.RAW_native()))
 			let byteIndex = index / 8

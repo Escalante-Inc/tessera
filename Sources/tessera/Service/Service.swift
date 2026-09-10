@@ -177,7 +177,7 @@ final class TesseraService: Service {
 					foo.addTask {
 						var buffer = ByteBufferAllocator().buffer(capacity: 1024)
 						
-						func writeToInterface(publicKey: PublicKey, data: any RAW_convertible) throws {
+						func writeToInterface(publicKey: PublicKey, data: any RAW_encodable) throws {
 							var messageLength = 0; data.RAW_encode(count: &messageLength)
 							if buffer.capacity < messageLength {
 								buffer.reserveCapacity(messageLength + 64)

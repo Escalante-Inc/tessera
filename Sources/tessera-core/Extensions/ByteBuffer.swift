@@ -3,22 +3,17 @@ import NIO
 import NIOCore
 import nostr_kit_swift
 
-extension ByteBuffer: @retroactive RAW_decodable {}
-extension ByteBuffer: @retroactive RAW_encodable {}
-extension ByteBuffer: @retroactive NOSTR_event_content {
-	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
-		let length = Int(count)
-		guard length >= 0 else { return nil }
-
-		var buffer = ByteBufferAllocator().buffer(capacity: length)
-
-		let rawBuffer = UnsafeRawBufferPointer(start: inputPtr, count: length)
-		buffer.writeBytes(rawBuffer)
-
-		self = buffer
+extension ByteBuffer: @retroactive RAW_decodable {
+	/// Decodes a `ByteBuffer` from raw bytes: the whole buffer becomes the payload.
+	public init?(RAW_decode buffer: UnsafeRawBufferPointer) {
+		var decoded = ByteBufferAllocator().buffer(capacity: buffer.count)
+		decoded.writeBytes(buffer)
+		self = decoded
 	}
+}
 
-	public func RAW_encode(count: inout RAW.size_t) {
+extension ByteBuffer: @retroactive RAW_encodable {
+	public func RAW_encode(count: inout Int) {
 		count += self.readableBytes
 	}
 
@@ -31,20 +26,29 @@ extension ByteBuffer: @retroactive NOSTR_event_content {
 		}
 		return dest.advanced(by: written)
 	}
+	@discardableResult
+	public func RAW_encode(_: UnsafeMutableRawPointer.Type, destination: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer {
+		return UnsafeMutableRawPointer(RAW_encode(dest: destination.assumingMemoryBound(to: UInt8.self)))
+	}
+
+
+}
+
+extension ByteBuffer: @retroactive NOSTR_event_content {
+	// `RAW_decodable`/`RAW_encodable` conformances above satisfy the protocol
+	// requirements (`RAW_decodable` + `RAW_encodable` + `Sendable` + `Hashable`).
 }
 
 public extension ByteBuffer {
 	/// Initialize a ByteBuffer using an object that conforms to `RAW_encodable`
 	init<T:RAW_encodable>(rawObject: T) {
-		var size: size_t = 0
+		var size: Int = 0
 		rawObject.RAW_encode(count: &size)
-		var buffer = ByteBufferAllocator().buffer(capacity: Int(size))
-		buffer.writeWithUnsafeMutableBytes(minimumWritableBytes: Int(size)) { ptr in
+		var buffer = ByteBufferAllocator().buffer(capacity: size)
+		buffer.writeWithUnsafeMutableBytes(minimumWritableBytes: size) { ptr in
 			guard let baseAddress = ptr.baseAddress else { return 0 }
-			rawObject.RAW_encode(
-				dest: baseAddress.assumingMemoryBound(to: UInt8.self)
-			)
-			return Int(size)
+			_ = rawObject.RAW_encode(UnsafeMutableRawPointer.self, destination: baseAddress)
+			return size
 		}
 		self = buffer
 	}

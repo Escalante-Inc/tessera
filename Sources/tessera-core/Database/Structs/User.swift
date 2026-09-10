@@ -11,7 +11,7 @@ public struct UserAccessLevel: Sendable, NOSTR_tag_value {
 			let bitIndex  = Int(level) % 8
 			bitArray[byteIndex] |= 1 << bitIndex
 		}
-		self.init(RAW_staticbuff: bitArray)
+		self.init(RAW_decode: bitArray.withUnsafeBytes { $0 })!
 	}
 }
 
@@ -35,24 +35,24 @@ public struct WriteAccessLevels: Sendable, Hashable, NOSTR_tag {
 
 /// The basic Tessera user information.
 /// This is the content posted in a kind 0 (profile) note.
-public struct User: RAW_convertible, RAW_accessible {
+public struct User: RAW_decodable, RAW_encodable, RAW_accessible {
 	public var userName: Encoded.String
 	
 	public init(userName:String) {
 		self.userName = Encoded.String(userName)
 	}
 	
-	public init?(RAW_decode inputPtr: consuming UnsafeRawPointer, count: RAW.size_t) {
-		guard count >= MemoryLayout<Bytes2>.size else { return nil }
-		let userNameLength = Int(Bytes2(RAW_staticbuff_seeking: &inputPtr).RAW_native())
-		let dataCount = count - MemoryLayout<Bytes2>.size
+	public init?(RAW_decode buffer:UnsafeRawBufferPointer) {
+		guard buffer.count >= MemoryLayout<Bytes2>.size else { return nil }
+		var seekPtr = buffer.baseAddress!
+		let userNameLength = Int(Bytes2(RAW_staticbuff_seeking: &seekPtr).RAW_native())
+		let dataCount = buffer.count - MemoryLayout<Bytes2>.size
 		guard dataCount == userNameLength else { return nil }
-		let userName = Encoded.String(RAW_decode: inputPtr, count: userNameLength)
-		inputPtr = inputPtr.advanced(by: userNameLength)
+		guard let userName = Encoded.String(RAW_decode: UnsafeRawBufferPointer(start: seekPtr, count: userNameLength)) else { return nil }
 		self.userName = userName
 	}
 	
-	public func RAW_encode(count: inout RAW.size_t) {
+	public func RAW_encode(count: inout Int) {
 		count += MemoryLayout<Bytes2>.size
 		userName.RAW_encode(count: &count)
 	}
@@ -63,5 +63,10 @@ public struct User: RAW_convertible, RAW_accessible {
 		var dest = userNameLengthBytes.RAW_encode(dest: dest)
 		dest = userName.RAW_encode(dest: dest)
 		return dest
+	}
+
+	@discardableResult
+	public func RAW_encode(_: UnsafeMutableRawPointer.Type, destination: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer {
+		return UnsafeMutableRawPointer(RAW_encode(dest: destination.assumingMemoryBound(to: UInt8.self)))
 	}
 }

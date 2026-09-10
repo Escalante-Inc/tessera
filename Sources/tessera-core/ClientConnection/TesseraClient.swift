@@ -49,8 +49,8 @@ public struct TesseraClientConfiguration: Sendable {
 				 logLevel: Logger.Level = .info) {
 		guard let serverRaw = try? RAW_base64.decode(serverPublicKeyBase64), serverRaw.count == 32 else { return nil }
 		guard let myRaw = try? RAW_base64.decode(myPrivateKeyBase64), myRaw.count == 32 else { return nil }
-		let serverKey = RAW_dh25519.PublicKey(RAW_staticbuff: serverRaw)
-		guard let myKey = myRaw.withUnsafeBufferPointer({ ptr in MemoryGuarded<RAW_dh25519.PrivateKey>.init(RAW_accessed: ptr) }) else { return nil }
+		let serverKey = RAW_dh25519.PublicKey(RAW_decode: serverRaw.withUnsafeBytes { $0 })!
+		guard let myKey = myRaw.withUnsafeBufferPointer({ ptr in MemoryGuarded<RAW_dh25519.PrivateKey>.init(RAW_decode: UnsafeRawBufferPointer(ptr)) }) else { return nil }
 		self.init(serverIP: serverIP, serverPort: serverPort, serverPublicKey: serverKey, myPrivateKey: myKey, mtu: mtu, logLevel: logLevel)
 	}
 }
@@ -180,7 +180,7 @@ public final class TesseraClient: @unchecked Sendable {
 	///
 	/// - Throws: `TesseraClientError.notConnected` if the tunnel is not established,
 	///   or `TesseraClientError.writeFailed` if the underlying write fails.
-	public func write(_ data: any RAW_convertible) async throws {
+	public func write(_ data: any RAW_encodable) async throws {
 		let channel = try await currentChannel()
 		var dataCount = 0
 		data.RAW_encode(count: &dataCount)

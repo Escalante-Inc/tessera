@@ -90,7 +90,7 @@ struct CLI:AsyncParsableCommand {
 			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: unsignedEvent.id)
 			try await openPGPConnection.closeVerifyAccess(pwType: .user)
 			try sig.withUnsafeBytes { ptr in
-				let nostrSig = NOSTR_sig(RAW_staticbuff: ptr.baseAddress!)
+				let nostrSig = NOSTR_sig(RAW_decode: ptr)!
 				let signedEvent = NOSTR_event_signed(unsignedEvent: unsignedEvent, sig: nostrSig)
 				try tesseraDB.scribeNewEvent(signedEvent: signedEvent, logLevel: .debug)
 			}
@@ -144,7 +144,7 @@ struct CLI:AsyncParsableCommand {
 			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: userEvent.id)
 			try await openPGPConnection.closeVerifyAccess(pwType: .user)
 			try sig.withUnsafeBytes { ptr in
-				let nostrSig = NOSTR_sig(RAW_staticbuff: ptr.baseAddress!)
+				let nostrSig = NOSTR_sig(RAW_decode: ptr)!
 				let signedEvent = NOSTR_event_signed(unsignedEvent: userEvent, sig: nostrSig)
 				try tesseraDB.scribeNewUser(signedEvent: signedEvent, logLevel: .debug)
 			}
@@ -208,7 +208,7 @@ struct CLI:AsyncParsableCommand {
 			let sig = try await openPGPConnection.computeDitigalSignature(hashedData: userEvent.id)
 			try await openPGPConnection.closeVerifyAccess(pwType: .user)
 			try sig.withUnsafeBytes { ptr in
-				let nostrSig = NOSTR_sig(RAW_staticbuff: ptr.baseAddress!)
+				let nostrSig = NOSTR_sig(RAW_decode: ptr)!
 				let signedEvent = NOSTR_event_signed(unsignedEvent: userEvent, sig: nostrSig)
 				try tesseraDB.scribeNewUser(signedEvent: signedEvent, logLevel: .debug)
 			}

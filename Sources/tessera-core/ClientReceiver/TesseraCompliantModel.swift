@@ -66,7 +66,7 @@ extension TesseraCompliantModel {
 	}
 	
 	public mutating func decodeEventAndUpsert(ptr: UnsafeRawBufferPointer) throws{
-		guard let msg = NOSTR_message_EVENT<UnsignedEvent<ContentType>>(RAW_decode: ptr.baseAddress!, count: ptr.count) else {
+		guard let msg = NOSTR_message_EVENT<UnsignedEvent<ContentType>>(RAW_decode: ptr) else {
 			throw NOSTR_message_error.badDecode
 		}
 		guard subscriptionIDs.contains(String(msg.subscriptionID)) else {
