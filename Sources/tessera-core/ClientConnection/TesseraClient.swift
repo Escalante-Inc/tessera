@@ -191,7 +191,16 @@ public final class TesseraClient: @unchecked Sendable {
 		}
 		buffer.moveWriterIndex(forwardBy: dataCount)
 		do {
-			try WGInterface<KCPChannels>.write(channel: channel, publicKey: configuration.serverPublicKey, data: buffer)
+			// Use the async instance write (future.get()) — the static
+			// channel write does EventLoopFuture.wait(), which synchronously
+			// blocks a cooperative thread. Blocked cooperative threads starve
+			// the Swift concurrency pool: Task.sleep timers never get a thread
+			// to run on, so any caller-level timeout deadlocks. The async path
+			// suspends instead, keeping the pool free (First Law).
+			guard let interface = state.withLock({ $0.interface }) else {
+				throw TesseraClientError.notConnected
+			}
+			try await interface.write(publicKey: configuration.serverPublicKey, data: [UInt8](buffer.readableBytesView))
 		} catch {
 			throw TesseraClientError.writeFailed(error)
 		}
