@@ -1,4 +1,4 @@
-# AGENT.md
+# AGENTS.md
 
 Guidance for AI agents working in the **tessera** repository. Read this before editing code.
 
