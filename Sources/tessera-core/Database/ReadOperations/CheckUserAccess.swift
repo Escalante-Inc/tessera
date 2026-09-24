@@ -2,10 +2,11 @@ import QuickLMDB
 import RAW_dh25519
 import nostr_kit_swift
 
-func rangeIndex(for value: Int) -> Int {
+func rangeIndex(for value: Int) -> Int? {
 	let start = 40_000; let width = 40_000
+	guard value >= start else { return nil }
 	let index = (value - start) / width
-	guard index < 256 else { return -1 }
+	guard index < 256 else { return nil }
 	return index
 }
 
@@ -23,11 +24,11 @@ extension TesseraDB {
 			var allowedKinds:[NOSTR_kind] = []
 			for kind in kinds {
 				guard kind.RAW_native() >= 40_000 else { allowedKinds.append(kind); continue }
-				let index = rangeIndex(for: Int(kind.RAW_native()))
+				guard let index = rangeIndex(for: Int(kind.RAW_native())) else { continue }
 				let byteIndex = index / 8
 				let bitIndex  = index % 8
 				let byte = ptr[byteIndex]
-				if (byte & (1 << bitIndex)) == 1 {
+				if (byte & (1 << bitIndex)) != 0 {
 					allowedKinds.append(kind)
 				}
 			}
@@ -47,7 +48,7 @@ extension TesseraDB {
 		return userAccess.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { ptr in
 			for kind in kinds {
 				guard kind.RAW_native() >= 40_000 else { continue }
-				let index = rangeIndex(for: Int(kind.RAW_native()))
+				guard let index = rangeIndex(for: Int(kind.RAW_native())) else { return false }
 				let byteIndex = index / 8
 				let bitIndex  = index % 8
 				let byte = ptr[byteIndex]
@@ -70,7 +71,7 @@ extension TesseraDB {
 		let userAccess = userAccessTag.value
 		return userAccess.RAW_access_immutable(UnsafeBufferPointer<UInt8>.self) { ptr in
 			guard kind.RAW_native() >= 40_000 else { return true }
-			let index = rangeIndex(for: Int(kind.RAW_native()))
+			guard let index = rangeIndex(for: Int(kind.RAW_native())) else { return false }
 			let byteIndex = index / 8
 			let bitIndex  = index % 8
 			let byte = ptr[byteIndex]

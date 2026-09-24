@@ -7,6 +7,7 @@ import RAW_base64
 import RAW_dh25519
 import RAW_ed25519
 import bedrock
+import QuickLMDB
 import nostr_kit_swift
 @testable import tessera_core
 
@@ -330,6 +331,53 @@ extension TesseraTests {
 			#expect(throws: AccessLevelError.invalidReadAccess) {
 				_ = try tesseraDB.queryEventsBySmartFilter(filters: [filter], user: bobEd25519PublicKey)
 			}
+		}
+
+		@Test func rangeIndexMapsOnlyValidKindRanges() {
+			// The access bitmap holds 256 levels; only kinds in
+			// [40_000, 10_280_000) map to 0...255. Everything else must be nil
+			// (deny), never a negative index that would trap on `1 << bitIndex`.
+			#expect(rangeIndex(for: 40_000) == 0)          // access level 0, kind 0
+			#expect(rangeIndex(for: 40_001) == 0)          // access level 0, kind 1
+			#expect(rangeIndex(for: 80_000) == 1)          // access level 1, kind 0
+			#expect(rangeIndex(for: 10_279_999) == 255)    // last level, last kind
+			#expect(rangeIndex(for: 10_280_000) == nil)    // one past the bitmap
+			#expect(rangeIndex(for: 11_000_000) == nil)    // far out of range
+			#expect(rangeIndex(for: 39_999) == nil)        // below the access-controlled range
+			#expect(rangeIndex(for: 0) == nil)
+			#expect(rangeIndex(for: -1) == nil)
+		}
+
+		@Test func outOfRangeKindDeniedNotTrapped() throws {
+			// Regression test for the process crash: `rangeIndex` previously returned
+			// -1 for kinds >= 10_280_000, and `1 << (-1 % 8)` is a runtime trap that
+			// killed the whole daemon. Access checks must now deny (write/read) or
+			// skip (forgiving) out-of-range kinds — never crash.
+			let readTx = try Transaction(env: tesseraDB.env, readOnly: true)
+			#expect(try tesseraDB.checkWriteAccess(user: aliceEd25519PublicKey, kind: NOSTR_kind(RAW_native: 11_000_000), tx: readTx) == false)
+			#expect(try tesseraDB.checkReadAccess(user: aliceEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 11_000_000)], tx: readTx) == false)
+			#expect(try tesseraDB.checkReadAccessForgiving(user: aliceEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 11_000_000)], tx: readTx).isEmpty)
+			// Boundary: the highest valid kind is still checked against the bitmap.
+			#expect(try tesseraDB.checkReadAccess(user: aliceEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 10_279_999)], tx: readTx) == false)
+		}
+
+		@Test func forgivingReadAccessTestsBitsNotJustBitZero() throws {
+			// Regression test for the silent read denial: `checkReadAccessForgiving`
+			// previously tested `(byte & (1 << bitIndex)) == 1`, which only ever
+			// matches bitIndex 0. Bob holds readAL [0, 1], so byte 0 is 0b11; kind
+			// 80_000 (access level 1, kind 0) hits bit 1, where `3 & 2 == 2` and
+			// `2 == 1` is false — Bob was wrongly denied a kind he was granted.
+			let readTx = try Transaction(env: tesseraDB.env, readOnly: true)
+			// Level 1 bit (kind 80_000) must be honored — the bug denied this.
+			#expect(try tesseraDB.checkReadAccessForgiving(user: bobEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 80_000)], tx: readTx) == [NOSTR_kind(RAW_native: 80_000)])
+			// Level 0 bit (kind 40_000) still works.
+			#expect(try tesseraDB.checkReadAccessForgiving(user: bobEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 40_000)], tx: readTx) == [NOSTR_kind(RAW_native: 40_000)])
+			// Level 2 bit (kind 120_000) was never granted — must stay denied even with == 0/!= 0.
+			#expect(try tesseraDB.checkReadAccessForgiving(user: bobEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 120_000)], tx: readTx).isEmpty)
+			// Sub-40_000 kinds are always allowed by the forgiving path.
+			#expect(try tesseraDB.checkReadAccessForgiving(user: bobEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 5_000)], tx: readTx) == [NOSTR_kind(RAW_native: 5_000)])
+			// Non-owning user without the bit must be denied.
+			#expect(try tesseraDB.checkReadAccessForgiving(user: aliceEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 80_000)], tx: readTx).isEmpty)
 		}
 
 		@Test func smartFilterUntilBoundaryIsInclusive() throws {
