@@ -19,13 +19,13 @@ fileprivate func isNewer(_ lhs: TesseraSignedEvent, than rhs: TesseraSignedEvent
 extension TesseraDB {
 	/// Returns the nostr event for the specified `NOSTR_id`
 	public func queryEventID(_ id: NOSTR_id) throws -> TesseraSignedEvent {
-		let newTrans = try Transaction(env:env, readOnly:true)
+		let newTrans = try Transaction<Read>(env:env)
 		return try signedEvents.loadEntry(key: id, tx: newTrans)
 	}
 	
 	/// Gets all filter eligible ids.
 	/// Returns the tuple containing all filter eligible ids and all author ids.
-	public func getFilterEligibleIds(filters:[Filter], tx:borrowing Transaction) throws -> (Set<NOSTR_id>, Set<NOSTR_id>) {
+	public func getFilterEligibleIds<M: TransactionMode>(filters:[Filter], tx: borrowing Transaction<M>) throws -> (Set<NOSTR_id>, Set<NOSTR_id>) {
 		var allAuthors = Set<NOSTR_id>()
 		var allFilterIds = Set<NOSTR_id>()
 		for filter in filters {
@@ -194,7 +194,7 @@ extension TesseraDB {
 	///
 	/// Uses a 'dumb' filter. Ignores deletions or updates on events.
 	public func queryEventsByDumbFilter(filters:[Filter], user: PublicKey? = nil) throws -> [TesseraSignedEvent] {
-		let newTrans = try Transaction(env:env, readOnly:true)
+		let newTrans = try Transaction<Read>(env:env)
 		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters, tx: newTrans)
 		guard !allFilterIds.isEmpty else {
 			return []
@@ -258,7 +258,7 @@ extension TesseraDB {
 	///
 	/// Uses a 'smart' filter. Respects deletions and updates on events.
 	public func queryEventsBySmartFilter(filters:[Filter], user: PublicKey? = nil) throws -> [TesseraSignedEvent] {
-		let newTrans = try Transaction(env:env, readOnly:true)
+		let newTrans = try Transaction<Read>(env:env)
 		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters, tx: newTrans)
 		guard !allFilterIds.isEmpty else {
 			return []

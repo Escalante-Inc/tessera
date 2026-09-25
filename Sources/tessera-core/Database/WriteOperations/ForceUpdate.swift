@@ -16,7 +16,7 @@ extension TesseraDB {
 	/// under a *new* key and the original event is removed. Failing to do both leaves the old
 	/// event authoritative in the indexes (or invisible to queries). This mirrors `forceDeleteEvent`
 	/// for the removal side and `scribeNewEvent` for the insertion side, all within one transaction.
-	private func replaceEventWithRewritten(_ oldEvent: TesseraSignedEvent, with newEvent: TesseraSignedEvent, tx: borrowing Transaction) throws {
+	private func replaceEventWithRewritten(_ oldEvent: TesseraSignedEvent, with newEvent: TesseraSignedEvent, tx: borrowing Transaction<Write>) throws {
 		// ---- Remove the original event from the main store and every index ----
 		try signedEvents.deleteEntry(key: oldEvent.unsignedEvent.id, tx: tx)
 		try authorIndex.deleteEntry(key: oldEvent.unsignedEvent.publicKey, value: oldEvent.unsignedEvent.id, tx: tx)
@@ -74,7 +74,7 @@ extension TesseraDB {
 		newContent: ByteBuffer? = nil)
 	{
 		do {
-			let newTrans = try Transaction(env:env, readOnly:false)
+			let newTrans = try Transaction<Write>(env:env)
 			let signedEvent = try signedEvents.loadEntry(key: id, tx: newTrans)
 			let updatedEvent = try createNewUpdatedEvent(signedEvent, adminSigningKey: admin, addTags: addTags, removeTags: removeTags, overwriteTags: overwriteTags, content: newContent)
 			try replaceEventWithRewritten(signedEvent, with: updatedEvent, tx: newTrans)
@@ -97,7 +97,7 @@ extension TesseraDB {
 		newContent: ByteBuffer? = nil)
 	{
 		do {
-			let newTrans = try Transaction(env:env, readOnly:false)
+			let newTrans = try Transaction<Write>(env:env)
 			let (allFilterIds, _) = try getFilterEligibleIds(filters: filters, tx: newTrans)
 
 			for id in allFilterIds {

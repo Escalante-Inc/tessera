@@ -13,7 +13,7 @@ func rangeIndex(for value: Int) -> Int? {
 extension TesseraDB {
 	/// Takes in a user as a `PublicKey` and the kinds that the user wants a read access check on as a `[NOSTR_kind]`
 	/// Returns the read access allowed kinds as an `[NOSTR_kind]`
-	func checkReadAccessForgiving(user: PublicKey, kinds: [NOSTR_kind], tx: borrowing Transaction) throws -> [NOSTR_kind] {
+	func checkReadAccessForgiving<M: TransactionMode>(user: PublicKey, kinds: [NOSTR_kind], tx: borrowing Transaction<M>) throws -> [NOSTR_kind] {
 		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
 		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
 		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: ReadAccessLevels.self) else {
@@ -38,7 +38,7 @@ extension TesseraDB {
 	
 	/// Takes in a user as a `PublicKey` and the kinds that the user wants a read access check on as a `[NOSTR_kind]`
 	/// Returns a Bool. If false, then one or more kinds failed the access check.
-	func checkReadAccess(user: PublicKey, kinds: [NOSTR_kind], tx: borrowing Transaction) throws -> Bool {
+	func checkReadAccess<M: TransactionMode>(user: PublicKey, kinds: [NOSTR_kind], tx: borrowing Transaction<M>) throws -> Bool {
 		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
 		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
 		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: ReadAccessLevels.self) else {
@@ -62,7 +62,7 @@ extension TesseraDB {
 	
 	/// Takes in a user as a `PublicKey` and the kind that the user wants a write access check on as a `[NOSTR_kind]`
 	/// Returns a Bool indicating write access.
-	func checkWriteAccess(user: PublicKey, kind: NOSTR_kind, tx: borrowing Transaction) throws -> Bool {
+	func checkWriteAccess<M: TransactionMode>(user: PublicKey, kind: NOSTR_kind, tx: borrowing Transaction<M>) throws -> Bool {
 		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
 		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
 		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: WriteAccessLevels.self) else {

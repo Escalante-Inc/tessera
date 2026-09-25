@@ -29,6 +29,12 @@ public struct TesseraDB:Sendable {
 	
 	internal let replaceableEvents:Database.DupSort<ReplaceableKey, DatedID>
 	
+	/// The raw environment handle, used by the concord sync driver (which opens
+	/// its own transaction on a dedicated round thread).
+	public var syncEnvironment: Environment {
+		return env
+	}
+	
 	/// Deletes the environments files. Equivalent to a `rm -r 'env_file_path'`.
 	/// If the environment (or lock) file does not exist, this is a no-op — it does
 	/// not throw and does not log an error.
@@ -65,7 +71,7 @@ public struct TesseraDB:Sendable {
 		log.debug("initializing tessera environment", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		env = try Environment(path:finalPath.path(), flags:[.noSubDir], mapSize:memoryMapSize, maxReaders:64, maxDBs:8, mode:[.ownerReadWriteExecute, .groupReadExecute, .otherReadExecute])
 		log.trace("created tessera environment. now creating initial transaction", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
-		let newTrans = try Transaction(env:env, readOnly:false)
+		let newTrans = try Transaction<Write>(env: env)
 		log.trace("created initial transaction. now creating databases", metadata:["path":"\(finalPath.path())", "memoryMapSize":"\(memoryMapSize)b"])
 		signedEvents = try Database.Strict<NOSTR_id, TesseraSignedEvent>(env:env, name:"SignedEvents", flags:[.create], tx:newTrans)
 		authorIndex = try Database.DupSort<PublicKey, NOSTR_id>(env:env, name:"AuthorIndex", flags:[.create], tx:newTrans)

@@ -4,7 +4,7 @@ import QuickLMDB
 extension TesseraDB {
 	public var eventCount: Int {
 		do {
-			let newTrans = try Transaction(env:env, readOnly:true)
+			let newTrans = try Transaction<Read>(env:env)
 			let stats = try signedEvents.dbStatistics(tx: newTrans)
 			return stats.ms_entries
 		} catch let error {

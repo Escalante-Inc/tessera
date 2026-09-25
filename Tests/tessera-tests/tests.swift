@@ -353,7 +353,7 @@ extension TesseraTests {
 			// -1 for kinds >= 10_280_000, and `1 << (-1 % 8)` is a runtime trap that
 			// killed the whole daemon. Access checks must now deny (write/read) or
 			// skip (forgiving) out-of-range kinds — never crash.
-			let readTx = try Transaction(env: tesseraDB.env, readOnly: true)
+			let readTx = try Transaction<Read>(env: tesseraDB.env)
 			#expect(try tesseraDB.checkWriteAccess(user: aliceEd25519PublicKey, kind: NOSTR_kind(RAW_native: 11_000_000), tx: readTx) == false)
 			#expect(try tesseraDB.checkReadAccess(user: aliceEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 11_000_000)], tx: readTx) == false)
 			#expect(try tesseraDB.checkReadAccessForgiving(user: aliceEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 11_000_000)], tx: readTx).isEmpty)
@@ -367,7 +367,7 @@ extension TesseraTests {
 			// matches bitIndex 0. Bob holds readAL [0, 1], so byte 0 is 0b11; kind
 			// 80_000 (access level 1, kind 0) hits bit 1, where `3 & 2 == 2` and
 			// `2 == 1` is false — Bob was wrongly denied a kind he was granted.
-			let readTx = try Transaction(env: tesseraDB.env, readOnly: true)
+			let readTx = try Transaction<Read>(env: tesseraDB.env)
 			// Level 1 bit (kind 80_000) must be honored — the bug denied this.
 			#expect(try tesseraDB.checkReadAccessForgiving(user: bobEd25519PublicKey, kinds: [NOSTR_kind(RAW_native: 80_000)], tx: readTx) == [NOSTR_kind(RAW_native: 80_000)])
 			// Level 0 bit (kind 40_000) still works.

@@ -14,7 +14,7 @@ extension TesseraDB {
 	/// CLI specific function to force delete a single event.
 	public func forceDeleteEvent(id:NOSTR_id) {
 		do {
-			let newTrans = try Transaction(env:env, readOnly:false)
+			let newTrans = try Transaction<Write>(env: env)
 			let deletedEvent = try signedEvents.loadEntry(key: id, tx: newTrans)
 			try signedEvents.deleteEntry(key:id, tx:newTrans)
 			
@@ -60,7 +60,7 @@ extension TesseraDB {
 	/// CLI specific function to force delete events matching the corresponding filter.
 	public func forceDeleteEventFiltered(filters:[Filter]) {
 		do {
-			let newTrans = try Transaction(env:env, readOnly:false)
+			let newTrans = try Transaction<Write>(env:env)
 			let (allFilterIds, _) = try getFilterEligibleIds(filters: filters, tx: newTrans)
 			
 			for id in allFilterIds {

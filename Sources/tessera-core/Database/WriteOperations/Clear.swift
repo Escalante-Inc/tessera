@@ -9,7 +9,7 @@ import nostr_kit_swift
 extension TesseraDB {
 	/// Deletes all signed events.
 	public func clearEventsDatabase() throws {
-		let newTrans = try Transaction(env: env, readOnly: false)
+		let newTrans = try Transaction<Write>(env: env)
 		try signedEvents.deleteAllEntries(tx: newTrans)
 		try newTrans.commit()
 		log.info(Logger.Message.orange("successfully deleted tessera events database"))

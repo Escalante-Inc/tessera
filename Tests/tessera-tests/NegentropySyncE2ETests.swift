@@ -11,7 +11,7 @@ import bedrock_fifo
 import QuickLMDB
 import nostr_kit_swift
 import wireguard_userspace_nio
-import negentropy_swift
+import concord
 @testable import tessera_core
 
 /// Builds a string-valued `EventTag` with the given index field (tag name).
@@ -88,14 +88,13 @@ final class NegentropySyncE2ETests {
 		do { try TesseraDB.deleteEnvironment(base: base, environment: "bobSync", logLevel: .trace) } catch {}
 	}
 
-	/// Runs one full two-way negentropy sync round between alice and bob over
+	/// Runs one full two-way concord sync round between alice and bob over
 	/// two real loopback WireGuard interfaces, then returns.
 	///
-	/// No fixed sleeps: the initiator (`NegentropySyncThread`) runs in the
-	/// background while the responder (`NegentropyListenThread`) is driven to
-	/// completion in the foreground — its internal receive loop only ends when
-	/// the peer's `.finish` frame arrives, so it is a *deterministic* completion
-	/// signal, exactly as in the negentropy library's own live test.
+	/// No fixed sleeps: both sides run `runConcordRoundAsync`, each on its own
+	/// dedicated thread, and each round self-terminates when the peer's
+	/// `.finish` arrives — awaiting both is a deterministic completion signal,
+	/// exactly as in the concord engine's own live tests.
 	private func syncOnce() async throws {
 		try await self.syncOnce(alice: aliceDB, bob: bobDB)
 	}
@@ -103,9 +102,9 @@ final class NegentropySyncE2ETests {
 	/// Generalized form of `syncOnce()` used when the two peers are not the
 	/// default alice/bob databases (e.g. empty-DB edge cases). The WireGuard
 	/// interfaces always use alice/bob's loopback endpoints; only the databases
-	/// that the negentropy threads reconcile differ.
+	/// that the concord rounds reconcile differ.
 	private func syncOnce(alice aDB: TesseraDB, bob bDB: TesseraDB) async throws {
-		var logger = Logger(label: "negentropy-e2e")
+		var logger = Logger(label: "concord-e2e")
 		logger.logLevel = .error
 
 		let bobFifo = FIFO<ByteBuffer, Swift.Error>()
@@ -122,37 +121,46 @@ final class NegentropySyncE2ETests {
 			try await aliceInterface.waitForChannelInit()
 			try await bobInterface.waitForChannelInit()
 
-			// Alice is the initiator: her sync thread has the same database set as
-			// the databases Bob holds (matching signatures), Bob listens. Everything
-			// the task closures touch is hoisted to locals first to keep the
-			// `@Sendable` closures free of `self` captures.
-			let aliceStrict: [any NegentropyDatabaseStrict] = aDB.syncStrictDBs
-			let bobStrict: [any NegentropyDatabaseStrict] = bDB.syncStrictDBs
-			let bobSyncPublicKey = bobPublicKey
+			// Role tie-break is the same anti-symmetric comparison the sync
+			// manager makes: the lexicographically greater WireGuard public key
+			// is the initiator. Computing it once keeps both sides consistent.
+			let aliceIsInitiator = alicePublicKey > bobPublicKey
+			// Hoist self properties to locals so the sending task closures
+			// capture only Sendable values (never `self`).
 			let aliceSyncPublicKey = alicePublicKey
-			let aliceListenFifo = aliceFifo
+			let bobSyncPublicKey = bobPublicKey
 
-			// Initiator: runs its pthread in the background until the round is done.
-			// These are unstructured `Task`s (not group children) so we can await
-			// their completion deterministically before tearing down the group.
-			let syncTask = Task<Void, Swift.Error> {
-				_ = try await NegentropySyncThread.run(([], aliceStrict, try aliceInterface.getChannel(), bobFifo, bobSyncPublicKey, false))
+			// Both sides hand off to `runConcordRoundAsync`, which parks the
+			// async task and runs the blocking LMDB round on a dedicated thread.
+			// Each continuation resumes exactly when its round terminates, so
+			// awaiting both is deterministic — no fixed sleeps.
+			let aliceChannel = try await aliceInterface.getChannel()
+			let bobChannel = try await bobInterface.getChannel()
+
+			let aliceRound = Task<Void, Swift.Error> {
+				try await runConcordRoundAsync(
+					env: aDB.syncEnvironment,
+					role: aliceIsInitiator ? .initiator : .responder,
+					transport: ConcordWGTransport<NOSTR_id, TesseraSignedEvent>(
+						channel: aliceChannel,
+						peerPublicKey: bobSyncPublicKey,
+						syncFIFO: bobFifo
+					)
+				)
 			}
-			// Responder: blocks on the first frame, then runs its pthread to
-			// completion. Both threads self-terminate when the peer's `.finish`
-			// frame arrives — returning from either IS a deterministic completion
-			// signal, so no fixed sleep is needed.
-			let listenTask = Task<Void, Swift.Error> {
-				let iterator = aliceListenFifo.makeSyncConsumerBlocking()
-				if let firstFrame = try iterator.next() {
-					_ = try await NegentropyListenThread.run(([], bobStrict, try bobInterface.getChannel(), aliceListenFifo, aliceSyncPublicKey, firstFrame))
-				}
+			let bobRound = Task<Void, Swift.Error> {
+				try await runConcordRoundAsync(
+					env: bDB.syncEnvironment,
+					role: aliceIsInitiator ? .responder : .initiator,
+					transport: ConcordWGTransport<NOSTR_id, TesseraSignedEvent>(
+						channel: bobChannel,
+						peerPublicKey: aliceSyncPublicKey,
+						syncFIFO: aliceFifo
+					)
+				)
 			}
-			// Await both to completion (the round is fully over only then), then
-			// cancel the long-lived interface tasks. Awaiting first avoids racing
-			// cancellation against a still-pending pthread future.
-			_ = try await syncTask.value
-			_ = try await listenTask.value
+			_ = try await aliceRound.value
+			_ = try await bobRound.value
 			group.cancelAll()
 			try await group.waitForAll()
 		})
@@ -168,7 +176,7 @@ final class NegentropySyncE2ETests {
 	/// `@available(*, noasync)` and therefore cannot be invoked directly from
 	/// an `async` test function.
 	private func eligibleIDs(_ db: TesseraDB, filter: Filter, includeAuthors: Bool = false) throws -> Set<NOSTR_id> {
-		let tx = try Transaction(env: db.env, readOnly: true)
+		let tx = try Transaction<Read>(env: db.env)
 		let ids = try db.getFilterEligibleIds(filters: [filter], tx: tx)
 		return includeAuthors ? ids.0.union(ids.1) : ids.0
 	}
@@ -217,8 +225,8 @@ final class NegentropySyncE2ETests {
 		let randomKeyBytes = try generateSecureRandomBytes(count: 32)
 		let randomKey = NOSTR_id(RAW_decode: randomKeyBytes.withUnsafeBytes { $0 })!
 		#expect(randomKey != tampered.unsignedEvent.id)
-		let trans = try Transaction(env: aliceDB.env, readOnly: false)
-		try aliceDB.syncSignedEvents.setEntry(key: randomKey, value: tampered, flags: [], tx: trans)
+		let trans = try Transaction<Write>(env: aliceDB.env)
+		try aliceDB.signedEvents.setEntry(key: randomKey, value: tampered, flags: [], tx: trans)
 		try trans.commit()
 		#expect(aliceDB.eventCount == 3)
 
@@ -244,8 +252,8 @@ final class NegentropySyncE2ETests {
 		}
 
 		// A raw sync peer, however, can place it directly into signedEvents.
-		let trans = try Transaction(env: aliceDB.env, readOnly: false)
-		try aliceDB.syncSignedEvents.setEntry(key: malformed.unsignedEvent.id, value: malformed, flags: [], tx: trans)
+		let trans = try Transaction<Write>(env: aliceDB.env)
+		try aliceDB.signedEvents.setEntry(key: malformed.unsignedEvent.id, value: malformed, flags: [], tx: trans)
 		try trans.commit()
 		#expect(aliceDB.eventCount == 3)
 
@@ -593,5 +601,56 @@ final class NegentropySyncE2ETests {
 		try b.reindexAfterSync(logLevel: .error)
 		#expect(a.eventCount == 2 + 2 * 400)
 		#expect(b.eventCount == 2 + 2 * 400)
+	}
+
+	// MARK: - Verified index / driver hardening
+
+	/// The verified index rejects value bytes that are not a decodeable valid
+	/// signed event, or whose key does not match the event's own id — a hostile
+	/// sync peer can never poison the store through the concord data phase.
+	@Test func verifiedIndexRejectsInvalidValueAndAcceptsValid() throws {
+		// No explicit abort needed: `Transaction`'s deinit aborts any
+		// uncommitted transaction at scope exit.
+		let trans = try Transaction<Write>(env: aliceDB.env)
+		let db = try Database(env: aliceDB.syncEnvironment, name: "SignedEvents", flags: [], tx: trans)
+		let cursor = try Cursor(db: db, tx: trans)
+		let index = VerifiedConcordIndex(ConcordLMDBIndex<NOSTR_id, TesseraSignedEvent>(database: db, cursor: cursor))
+
+		// Not decodeable as an event at all.
+		let randomKeyBytes = try generateSecureRandomBytes(count: 32)
+		let randomKey = NOSTR_id(RAW_decode: randomKeyBytes.withUnsafeBytes { $0 })!
+		#expect(throws: ConcordSyncError.invalidValue(randomKey)) {
+			try index.storeBytes(randomKey, ConcordOwnedBytes([0xDE, 0xAD, 0xBE, 0xEF]))
+		}
+
+		// A perfectly validly-encoded event stored under a key that does NOT
+		// match its id must also be rejected.
+		let valueBytes = ByteBuffer(rawObject: aliceNoteEvent)
+		let rawValue = valueBytes.getBytes(at: 0, length: valueBytes.readableBytes)!
+		#expect(throws: ConcordSyncError.invalidValue(randomKey)) {
+			try index.storeBytes(randomKey, ConcordOwnedBytes(rawValue))
+		}
+
+		// The same bytes under the CORRECT key are accepted (no throw).
+		try index.storeBytes(aliceNoteEvent.unsignedEvent.id, ConcordOwnedBytes(rawValue))
+	}
+
+	/// A transport that surfaces a malformed frame aborts the driver round and
+	/// rolls the write transaction back: the store is left exactly as it was.
+	@Test func driverRollsBackOnMalformedFrame() throws {
+		struct BadFrameTransport: ConcordTransport {
+			typealias Key = NOSTR_id
+			typealias Value = TesseraSignedEvent
+			func send(_ message: ConcordMessage<NOSTR_id, TesseraSignedEvent>) throws {}
+			func receive() throws -> ConcordMessage<NOSTR_id, TesseraSignedEvent>? {
+				throw ConcordWireError.badVersion(2)
+			}
+			func close() throws {}
+		}
+		let before = aliceDB.eventCount
+		#expect(throws: ConcordWireError.self) {
+			try runConcordRoundSync(env: aliceDB.syncEnvironment, role: .responder, transport: BadFrameTransport())
+		}
+		#expect(aliceDB.eventCount == before)
 	}
 }

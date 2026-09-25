@@ -1,5 +1,5 @@
 {
-  "originHash" : "1235e21c5a8cff333d8b440f286e775ff24d91088824ff4b1ab6de507c46b735",
+  "originHash" : "1ac9d2b8265f7e856cc253216407ee8621b8d122bc7924e5fffd9fafc27c1745",
   "pins" : [
     {
       "identity" : "bedrock",
@@ -15,17 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tannerdsilva/CLMDB.git",
       "state" : {
-        "revision" : "4ce5826424f8e65f395efc5b4c611479384722b1",
-        "version" : "0.9.30"
-      }
-    },
-    {
-      "identity" : "negentropy-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/bwyma1/negentropy-swift",
-      "state" : {
-        "branch" : "main",
-        "revision" : "aeda715d53f6467a142c5e59d38a222e2e4e009b"
+        "revision" : "653e73e2fc1b48cec661c740510cabfb53af723d",
+        "version" : "1.0.2"
       }
     },
     {
@@ -44,15 +35,6 @@
       "state" : {
         "revision" : "e5574ba70f6b65a08d78db972e063fd839c62068",
         "version" : "0.2.1"
-      }
-    },
-    {
-      "identity" : "quicklmdb",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tannerdsilva/QuickLMDB",
-      "state" : {
-        "branch" : "rawdog-v22-bump",
-        "revision" : "df12a8489322654f3df165f6af6681a8d81827a0"
       }
     },
     {
@@ -78,8 +60,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-async-algorithms.git",
       "state" : {
-        "revision" : "6c050d5ef8e1aa6342528460db614e9770d7f804",
-        "version" : "1.1.1"
+        "revision" : "789dcf1f3d3f00251482f40a432ab7144c181987",
+        "version" : "1.1.6"
       }
     },
     {
@@ -96,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-collections.git",
       "state" : {
-        "revision" : "7b847a3b7008b2dc2f47ca3110d8c782fb2e5c7e",
-        "version" : "1.3.0"
+        "revision" : "a66de878e87ef5a3d5d390e0f6d9002aa5541a43",
+        "version" : "1.7.0"
       }
     },
     {

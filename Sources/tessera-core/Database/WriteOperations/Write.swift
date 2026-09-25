@@ -20,7 +20,7 @@ extension TesseraDB {
 			throw SignedNoteError.cantStoreEphemeralEvent
 		}
 		
-		let newTrans = try Transaction(env:env, readOnly:false)
+		let newTrans = try Transaction<Write>(env:env)
 		do {
 			if try checkWriteAccess(user: signedEvent.unsignedEvent.publicKey, kind: signedEvent.unsignedEvent.kind, tx: newTrans) == false {
 				throw AccessLevelError.invalidWriteAccess
@@ -55,7 +55,7 @@ extension TesseraDB {
 				}
 			} catch LMDBError.notFound {}
 			logger.trace("event id validated as new. writing to db.", metadata: ["event_id":"\(String(describing: signedEvent.unsignedEvent.id))"])
-			try cursor.setEntry(key:signedEvent.unsignedEvent.id, value:signedEvent, flags:[.noOverwrite])
+			try cursor.setEntry(key:signedEvent.unsignedEvent.id, value:signedEvent, flags:[.noOverwrite], tx:newTrans)
 		}
 		
 		// Add Event to the indexes
@@ -90,13 +90,13 @@ extension TesseraDB {
 		
 		// Add to user index if it's a user
 		logger.trace("opening transaction to write data to events database")
-		let newTrans = try Transaction(env:env, readOnly:false)
+		let newTrans = try Transaction<Write>(env:env)
 		try userIndex.cursor(tx:newTrans) { cursor in
 			guard try cursor.containsEntry(key:signedEvent.unsignedEvent.publicKey) == false else {
 				logger.warning(Logger.Message.red("Attempted to write a user that already exists. An administrator can either edit the original user or delete it."))
 				throw LMDBError.keyExists
 			}
-			try cursor.setEntry(key:signedEvent.unsignedEvent.publicKey, value:signedEvent.unsignedEvent.id, flags:[.noOverwrite])
+			try cursor.setEntry(key:signedEvent.unsignedEvent.publicKey, value:signedEvent.unsignedEvent.id, flags:[.noOverwrite], tx:newTrans)
 		}
 		
 		try signedEvents.cursor(tx:newTrans) { cursor in
@@ -107,7 +107,7 @@ extension TesseraDB {
 				}
 			} catch LMDBError.notFound {}
 			logger.trace("event id validated as new. writing to db.", metadata: ["event_id":"\(String(describing: signedEvent.unsignedEvent.id))"])
-			try cursor.setEntry(key:signedEvent.unsignedEvent.id, value:signedEvent, flags:[.noOverwrite])
+			try cursor.setEntry(key:signedEvent.unsignedEvent.id, value:signedEvent, flags:[.noOverwrite], tx:newTrans)
 		}
 		
 		// Add Event to the indexes

@@ -181,7 +181,7 @@ public final class TesseraClient: @unchecked Sendable {
 	/// - Throws: `TesseraClientError.notConnected` if the tunnel is not established,
 	///   or `TesseraClientError.writeFailed` if the underlying write fails.
 	public func write(_ data: any RAW_encodable) async throws {
-		let channel = try await currentChannel()
+		_ = try await currentChannel()
 		var dataCount = 0
 		data.RAW_encode(count: &dataCount)
 		var buffer = ByteBufferAllocator().buffer(capacity: dataCount)

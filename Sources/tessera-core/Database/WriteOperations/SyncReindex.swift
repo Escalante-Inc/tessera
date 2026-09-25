@@ -6,25 +6,8 @@ import RAW_dh25519
 import bedrock
 import QuickLMDB
 import nostr_kit_swift
-import negentropy_swift
 
 extension TesseraDB {
-	/// Returns the primary `signedEvents` strict database, exposed for negentropy
-	/// synchronization. The negentropy library reconciles this database directly
-	/// against the peer tessera's `signedEvents` database.
-	public var syncSignedEvents: Database.Strict<NOSTR_id, TesseraSignedEvent> {
-		return signedEvents
-	}
-
-	/// Returns the strict databases that negentropy will reconcile, as the
-	/// protocol-erased array the sync engine expects. Conformance of the key
-	/// type (`DatabaseIndexVector` via the retroactive `MDB_comparable`
-	/// conformance) is only visible inside this module, so the array is built
-	/// here rather than in the executable.
-	public var syncStrictDBs: [any NegentropyDatabaseStrict] {
-		return [signedEvents]
-	}
-
 	/// Rebuilds the query indexes from the primary `signedEvents` database.
 	///
 	/// The negentropy sync path writes events directly into `signedEvents`,
@@ -44,7 +27,7 @@ extension TesseraDB {
 		var logger = log
 		logger.logLevel = logLevel
 
-		let newTrans = try Transaction(env: env, readOnly: false)
+		let newTrans = try Transaction<Write>(env: env)
 		// Pass 1: collect bad keys while iterating (deleting during iteration is unsafe).
 		var badKeys: [NOSTR_id] = []
 		signedEvents.cursor(tx: newTrans) { cursor in
@@ -98,7 +81,7 @@ extension TesseraDB {
 	}
 
 	/// Indexes a single event into the query indexes, ignoring duplicate entries.
-	private func indexSyncedEvent(_ signedEvent: TesseraSignedEvent, tx: borrowing Transaction, logger: Logger) throws {
+	private func indexSyncedEvent(_ signedEvent: TesseraSignedEvent, tx: borrowing Transaction<Write>, logger: Logger) throws {
 		// Mirrors the indexing portion of `scribeNewEvent`.
 		let unsignedEvent = signedEvent.unsignedEvent
 		try? authorIndex.setEntry(key: unsignedEvent.publicKey, value: unsignedEvent.id, flags: [.noDupData], tx: tx)

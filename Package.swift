@@ -30,13 +30,11 @@ let package = Package(
 	dependencies:[
 		.package(url:"https://github.com/tannerdsilva/rawdog.git", "22.0.0"..<"23.0.0"),
 //		.package(url:"https://github.com/tannerdsilva/QuickLMDB.git", "14.0.0"..<"15.0.0"),
-		.package(url:"https://github.com/tannerdsilva/QuickLMDB", branch:"rawdog-v22-bump"),
+		.package(name:"QuickLMDB", path:"../QuickLMDB-v22rewrite"),
 		.package(url: "https://github.com/bwyma1/nostr-kit-swift", "0.0.0"..<"1.0.0"),
 		.package(url:"https://github.com/bwyma1/openpgp-kit-swift", "0.0.0"..<"1.0.0"),
 		//.package(url:"https://github.com/tannerdsilva/wireguard-swift", revision:"7245b1ee6ecae571318900c4343e97526c67868b"),
 		.package(url:"https://github.com/tannerdsilva/wireguard-swift", branch:"master"),
-//		.package(path:"../negentropy-swift"),
-		.package(url:"https://github.com/bwyma1/negentropy-swift", branch:"main"),
 
 		.package(url:"https://github.com/apple/swift-nio.git", "2.81.0"..<"3.0.0"),
 		.package(url:"https://github.com/apple/swift-log.git", "1.0.0"..<"2.0.0"),
@@ -55,12 +53,12 @@ let package = Package(
 				.product(name:"RAW_blake2", package:"rawdog"),
 				.product(name:"RAW_sha256", package:"rawdog"),
 				.product(name:"QuickLMDB", package:"QuickLMDB"),
+				.product(name:"concord", package:"QuickLMDB"),
 				
 				.product(name:"NIO", package:"swift-nio"),
 				.product(name:"ServiceLifecycle", package:"swift-service-lifecycle"),
 				.product(name:"ArgumentParser", package:"swift-argument-parser"),
 				.product(name:"wireguard-userspace-nio", package:"wireguard-swift"),
-				.product(name:"negentropy-swift", package:"negentropy-swift"),
 				.product(name: "openpgp-kit", package: "openpgp-kit-swift"),
 				"tessera-core"
 			],
@@ -78,11 +76,11 @@ let package = Package(
 				.product(name:"RAW_ed25519", package:"rawdog"),
 				.product(name:"RAW_base64", package:"rawdog"),
 				.product(name:"QuickLMDB", package:"QuickLMDB"),
+				.product(name:"concord", package:"QuickLMDB"),
 				.product(name:"NIO", package:"swift-nio"),
 				.product(name:"Logging", package:"swift-log"),
 				.product(name:"wireguard-userspace-nio", package:"wireguard-swift"),
 				.product(name:"nostr-kit-swift", package:"nostr-kit-swift"),
-				.product(name:"negentropy-swift", package:"negentropy-swift"),
 			]
 		),
 		.target(
@@ -101,7 +99,8 @@ let package = Package(
 		.testTarget(
 			name: "tessera-tests",
 			dependencies: [
-				"tessera-core"
+				"tessera-core",
+				.product(name:"concord", package:"QuickLMDB"),
 			]
 		),
 	]
