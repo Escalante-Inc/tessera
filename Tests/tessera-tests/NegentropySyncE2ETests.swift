@@ -171,13 +171,11 @@ final class NegentropySyncE2ETests {
 		return try db.queryEventsBySmartFilter(filters: [Filter(ids: [aliceNoteEvent.unsignedEvent.id, bobNoteEvent.unsignedEvent.id, aliceProfileEvent.unsignedEvent.id, bobProfileEvent.unsignedEvent.id])], user: user).count
 	}
 
-	/// Synchronous wrapper for `getFilterEligibleIds`, since `Transaction`
-	/// initializers and all transaction-bound QuickLMDB calls are marked
-	/// `@available(*, noasync)` and therefore cannot be invoked directly from
-	/// an `async` test function.
+	/// Synchronous wrapper for `getFilterEligibleIds`, since transaction-bound
+	/// QuickLMDB calls are marked `@available(*, noasync)` and therefore cannot be
+	/// invoked directly from an `async` test function.
 	private func eligibleIDs(_ db: TesseraDB, filter: Filter, includeAuthors: Bool = false) throws -> Set<NOSTR_id> {
-		let tx = try Transaction<Read>(env: db.env)
-		let ids = try db.getFilterEligibleIds(filters: [filter], tx: tx)
+		let ids = try db.getFilterEligibleIds(filters: [filter])
 		return includeAuthors ? ids.0.union(ids.1) : ids.0
 	}
 

@@ -13,9 +13,11 @@ func rangeIndex(for value: Int) -> Int? {
 extension TesseraDB {
 	/// Takes in a user as a `PublicKey` and the kinds that the user wants a read access check on as a `[NOSTR_kind]`
 	/// Returns the read access allowed kinds as an `[NOSTR_kind]`
-	func checkReadAccessForgiving<M: TransactionMode>(user: PublicKey, kinds: [NOSTR_kind], tx: borrowing Transaction<M>) throws -> [NOSTR_kind] {
-		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
-		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
+	@MDB_transact(.readOnly)
+	func checkReadAccessForgiving(user: PublicKey, kinds: [NOSTR_kind]) throws -> [NOSTR_kind] {
+		let userEventId = #load(TesseraDB.self, database: \.userIndex, key: user)
+		guard let userEventId = userEventId else { throw LMDBError.notFound }
+		guard let userEvent = #load(TesseraDB.self, database: \.signedEvents, key: userEventId) else { throw LMDBError.notFound }
 		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: ReadAccessLevels.self) else {
 			throw AccessLevelError.userHasNoAccessLevels
 		}
@@ -38,9 +40,10 @@ extension TesseraDB {
 	
 	/// Takes in a user as a `PublicKey` and the kinds that the user wants a read access check on as a `[NOSTR_kind]`
 	/// Returns a Bool. If false, then one or more kinds failed the access check.
-	func checkReadAccess<M: TransactionMode>(user: PublicKey, kinds: [NOSTR_kind], tx: borrowing Transaction<M>) throws -> Bool {
-		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
-		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
+	@MDB_transact(.readOnly)
+	func checkReadAccess(user: PublicKey, kinds: [NOSTR_kind]) throws -> Bool {
+		guard let userEventId = #load(TesseraDB.self, database: \.userIndex, key: user) else { throw LMDBError.notFound }
+		guard let userEvent = #load(TesseraDB.self, database: \.signedEvents, key: userEventId) else { throw LMDBError.notFound }
 		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: ReadAccessLevels.self) else {
 			throw AccessLevelError.userHasNoAccessLevels
 		}
@@ -62,9 +65,10 @@ extension TesseraDB {
 	
 	/// Takes in a user as a `PublicKey` and the kind that the user wants a write access check on as a `[NOSTR_kind]`
 	/// Returns a Bool indicating write access.
-	func checkWriteAccess<M: TransactionMode>(user: PublicKey, kind: NOSTR_kind, tx: borrowing Transaction<M>) throws -> Bool {
-		let userEventId = try userIndex.loadEntry(key: user, tx: tx)
-		let userEvent = try signedEvents.loadEntry(key: userEventId, tx: tx)
+	@MDB_transact(.readOnly)
+	func checkWriteAccess(user: PublicKey, kind: NOSTR_kind) throws -> Bool {
+		guard let userEventId = #load(TesseraDB.self, database: \.userIndex, key: user) else { throw LMDBError.notFound }
+		guard let userEvent = #load(TesseraDB.self, database: \.signedEvents, key: userEventId) else { throw LMDBError.notFound }
 		guard let userAccessTag = findTag(tags: userEvent.unsignedEvent.tags.array, as: WriteAccessLevels.self) else {
 			throw AccessLevelError.userHasNoAccessLevels
 		}

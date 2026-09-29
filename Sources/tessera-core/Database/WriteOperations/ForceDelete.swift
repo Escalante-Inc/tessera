@@ -14,44 +14,44 @@ extension TesseraDB {
 	/// CLI specific function to force delete a single event.
 	public func forceDeleteEvent(id:NOSTR_id) {
 		do {
-			let newTrans = try Transaction<Write>(env: env)
-			let deletedEvent = try signedEvents.loadEntry(key: id, tx: newTrans)
-			try signedEvents.deleteEntry(key:id, tx:newTrans)
-			
-			// Remove Event from the indexes
-			try authorIndex.deleteEntry(key: deletedEvent.unsignedEvent.publicKey, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-			try applicationIndex.deleteEntry(key: deletedEvent.unsignedEvent.application, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-			
-			try kindIndex.deleteEntry(key: deletedEvent.unsignedEvent.kind, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-			
-			try dateIndex.deleteEntry(key: deletedEvent.unsignedEvent.date, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-			
-			
-			for tag in deletedEvent.unsignedEvent.tags.array {
-				guard let dbTag = tag.unwrap(as: EventTag.self) else { continue }
-				try tagIndex.deleteEntry(key: dbTag, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-			}
-			
-			let kindInt = deletedEvent.unsignedEvent.kind.RAW_native() % 40_000
-			if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
-				var dTag:DTag? = nil
-				for tag in deletedEvent.unsignedEvent.tags.array {
-					guard let t = tag.unwrap(as: DTag.self) else { continue }
-					dTag = t
-					break
-				}
-				
-				let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
-				let datedId = DatedID(date: deletedEvent.unsignedEvent.date, id: deletedEvent.unsignedEvent.id)
-				
-				try replaceableEvents.deleteEntry(key: replaceableKey, value: datedId, tx: newTrans)
-			}
-			
-			
+			try forceDeleteEventTx(id: id)
 			log.info(Logger.Message.orange("successfully force deleted event"), metadata: ["event_id":"\(id)"])
-			try newTrans.commit()
 		} catch let error {
 			log.error(Logger.Message.red("Failed to delete event due to internal error."), metadata: ["error":"\(error)"])
+		}
+	}
+
+	@MDB_transact(.readWrite)
+	private func forceDeleteEventTx(id:NOSTR_id) throws {
+		guard let deletedEvent = try #load(TesseraDB.self, database: \.signedEvents, key: id) else { throw LMDBError.notFound }
+		try #delete(TesseraDB.self, database: \.signedEvents, key: id)
+
+		// Remove Event from the indexes
+		try #delete(TesseraDB.self, database: \.authorIndex, key: deletedEvent.unsignedEvent.publicKey, value: deletedEvent.unsignedEvent.id)
+		try #delete(TesseraDB.self, database: \.applicationIndex, key: deletedEvent.unsignedEvent.application, value: deletedEvent.unsignedEvent.id)
+
+		try #delete(TesseraDB.self, database: \.kindIndex, key: deletedEvent.unsignedEvent.kind, value: deletedEvent.unsignedEvent.id)
+
+		try #delete(TesseraDB.self, database: \.dateIndex, key: deletedEvent.unsignedEvent.date, value: deletedEvent.unsignedEvent.id)
+
+		for tag in deletedEvent.unsignedEvent.tags.array {
+			guard let dbTag = tag.unwrap(as: EventTag.self) else { continue }
+			try #delete(TesseraDB.self, database: \.tagIndex, key: dbTag, value: deletedEvent.unsignedEvent.id)
+		}
+
+		let kindInt = deletedEvent.unsignedEvent.kind.RAW_native() % 40_000
+		if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
+			var dTag:DTag? = nil
+			for tag in deletedEvent.unsignedEvent.tags.array {
+				guard let t = tag.unwrap(as: DTag.self) else { continue }
+				dTag = t
+				break
+			}
+
+			let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
+			let datedId = DatedID(date: deletedEvent.unsignedEvent.date, id: deletedEvent.unsignedEvent.id)
+
+			try #delete(TesseraDB.self, database: \.replaceableEvents, key: replaceableKey, value: datedId)
 		}
 	}
 	
@@ -60,45 +60,48 @@ extension TesseraDB {
 	/// CLI specific function to force delete events matching the corresponding filter.
 	public func forceDeleteEventFiltered(filters:[Filter]) {
 		do {
-			let newTrans = try Transaction<Write>(env:env)
-			let (allFilterIds, _) = try getFilterEligibleIds(filters: filters, tx: newTrans)
-			
-			for id in allFilterIds {
-				let deletedEvent = try signedEvents.loadEntry(key: id, tx: newTrans)
-				try signedEvents.deleteEntry(key:id, tx:newTrans)
-				
-				// Remove Event from the indexes
-				try authorIndex.deleteEntry(key: deletedEvent.unsignedEvent.publicKey, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-				
-				try kindIndex.deleteEntry(key: deletedEvent.unsignedEvent.kind, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-				
-				try dateIndex.deleteEntry(key: deletedEvent.unsignedEvent.date, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-				
-				
-				for tag in deletedEvent.unsignedEvent.tags.array {
-					guard let dbTag = tag.unwrap(as: EventTag.self) else { continue }
-					try tagIndex.deleteEntry(key: dbTag, value: deletedEvent.unsignedEvent.id, tx: newTrans)
-				}
-				
-				let kindInt = deletedEvent.unsignedEvent.kind.RAW_native() % 40_000
-				if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
-					var dTag:DTag? = nil
-					for tag in deletedEvent.unsignedEvent.tags.array {
-						guard let t = tag.unwrap(as: DTag.self) else { continue }
-						dTag = t
-						break
-					}
-					
-					let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
-					let datedId = DatedID(date: deletedEvent.unsignedEvent.date, id: deletedEvent.unsignedEvent.id)
-					
-					try replaceableEvents.deleteEntry(key: replaceableKey, value: datedId, tx: newTrans)
-				}
-			}
-			try newTrans.commit()
-			log.info(Logger.Message.orange("successfully force deleted \(allFilterIds.count) events"))
+			let count = try forceDeleteEventFilteredTx(filters: filters)
+			log.info(Logger.Message.orange("successfully force deleted \(count) events"))
 		} catch {
 			log.error(Logger.Message.red("Failed to delete events due to internal error."), metadata: ["error":"\(error)"])
 		}
+	}
+
+	@MDB_transact(.readWrite)
+	private func forceDeleteEventFilteredTx(filters:[Filter]) throws -> Int {
+		let (allFilterIds, _) = try #MDB_transacted(getFilterEligibleIds(filters: filters))
+
+		for id in allFilterIds {
+			guard let deletedEvent = try #load(TesseraDB.self, database: \.signedEvents, key: id) else { throw LMDBError.notFound }
+			try #delete(TesseraDB.self, database: \.signedEvents, key: id)
+
+			// Remove Event from the indexes
+			try #delete(TesseraDB.self, database: \.authorIndex, key: deletedEvent.unsignedEvent.publicKey, value: deletedEvent.unsignedEvent.id)
+
+			try #delete(TesseraDB.self, database: \.kindIndex, key: deletedEvent.unsignedEvent.kind, value: deletedEvent.unsignedEvent.id)
+
+			try #delete(TesseraDB.self, database: \.dateIndex, key: deletedEvent.unsignedEvent.date, value: deletedEvent.unsignedEvent.id)
+
+			for tag in deletedEvent.unsignedEvent.tags.array {
+				guard let dbTag = tag.unwrap(as: EventTag.self) else { continue }
+				try #delete(TesseraDB.self, database: \.tagIndex, key: dbTag, value: deletedEvent.unsignedEvent.id)
+			}
+
+			let kindInt = deletedEvent.unsignedEvent.kind.RAW_native() % 40_000
+			if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
+				var dTag:DTag? = nil
+				for tag in deletedEvent.unsignedEvent.tags.array {
+					guard let t = tag.unwrap(as: DTag.self) else { continue }
+					dTag = t
+					break
+				}
+
+				let replaceableKey = ReplaceableKey(pubkey: deletedEvent.unsignedEvent.publicKey, kind: deletedEvent.unsignedEvent.kind, dTag: dTag)
+				let datedId = DatedID(date: deletedEvent.unsignedEvent.date, id: deletedEvent.unsignedEvent.id)
+
+				try #delete(TesseraDB.self, database: \.replaceableEvents, key: replaceableKey, value: datedId)
+			}
+		}
+		return allFilterIds.count
 	}
 }

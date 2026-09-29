@@ -23,14 +23,14 @@ extension TesseraDB {
 	///
 	/// Index updates are idempotent (`noDupData`): events that were already indexed
 	/// by a previous pass are skipped rather than duplicated.
+	@MDB_transact(.readWrite)
 	public func reindexAfterSync(logLevel: Logger.Level) throws {
 		var logger = log
 		logger.logLevel = logLevel
 
-		let newTrans = try Transaction<Write>(env: env)
 		// Pass 1: collect bad keys while iterating (deleting during iteration is unsafe).
 		var badKeys: [NOSTR_id] = []
-		signedEvents.cursor(tx: newTrans) { cursor in
+		try #cursor(TesseraDB.self, database: \.signedEvents) { cursor in
 			if let entry = try? cursor.opFirst(returning: (key: NOSTR_id, value: TesseraSignedEvent).self) {
 				var iterator: (key: NOSTR_id, value: TesseraSignedEvent)? = entry
 				while iterator != nil {
@@ -51,7 +51,7 @@ extension TesseraDB {
 						}
 					}
 					if !isVerified {
-						logger.warning("Synced event failed verification; dropping", metadata: ["event_id": "\\(String(describing: key))"])
+						logger.warning("Synced event failed verification; dropping", metadata: ["event_id": "\(String(describing: key))"])
 						badKeys.append(key)
 					}
 					iterator = try? cursor.opNext(returning: (key: NOSTR_id, value: TesseraSignedEvent).self)
@@ -61,44 +61,38 @@ extension TesseraDB {
 
 		// Pass 2: remove unverified events.
 		for key in badKeys {
-			try? signedEvents.deleteEntry(key: key, tx: newTrans)
+			try? #delete(TesseraDB.self, database: \.signedEvents, key: key)
 		}
 
 		// Pass 3: reindex all remaining events idempotently.
-		try signedEvents.cursor(tx: newTrans) { cursor in
+		try #cursor(TesseraDB.self, database: \.signedEvents) { cursor in
 			if let entry = try? cursor.opFirst(returning: (key: NOSTR_id, value: TesseraSignedEvent).self) {
 				var iterator: (key: NOSTR_id, value: TesseraSignedEvent)? = entry
 				while iterator != nil {
-					let value = iterator!.value
-					try indexSyncedEvent(value, tx: newTrans, logger: logger)
+					let signedEvent = iterator!.value
+					// Mirrors the indexing portion of `scribeNewEvent`.
+					let unsignedEvent = signedEvent.unsignedEvent
+					try? #store(TesseraDB.self, database: \.authorIndex, key: unsignedEvent.publicKey, value: unsignedEvent.id, flags: [.noDupData])
+					try? #store(TesseraDB.self, database: \.applicationIndex, key: unsignedEvent.application, value: unsignedEvent.id, flags: [.noDupData])
+					try? #store(TesseraDB.self, database: \.kindIndex, key: unsignedEvent.kind, value: unsignedEvent.id, flags: [.noDupData])
+					try? #store(TesseraDB.self, database: \.dateIndex, key: unsignedEvent.date, value: unsignedEvent.id, flags: [.noDupData])
+
+					for tag in unsignedEvent.tags.array {
+						guard let unwrappedTag = tag.unwrap(as: EventTag.self) else { continue }
+						try? #store(TesseraDB.self, database: \.tagIndex, key: unwrappedTag, value: unsignedEvent.id, flags: [.noDupData])
+					}
+
+					let kindInt = unsignedEvent.kind.RAW_native() % 40_000
+					if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
+						let replaceableKey = try ReplaceableKey(event: unsignedEvent)
+						let datedId = DatedID(date: unsignedEvent.date, id: unsignedEvent.id)
+						try? #store(TesseraDB.self, database: \.replaceableEvents, key: replaceableKey, value: datedId, flags: [.noDupData])
+					}
 					iterator = try? cursor.opNext(returning: (key: NOSTR_id, value: TesseraSignedEvent).self)
 				}
 			}
 		}
 
-		try newTrans.commit()
 		logger.debug("Successfully reindexed database after sync")
-	}
-
-	/// Indexes a single event into the query indexes, ignoring duplicate entries.
-	private func indexSyncedEvent(_ signedEvent: TesseraSignedEvent, tx: borrowing Transaction<Write>, logger: Logger) throws {
-		// Mirrors the indexing portion of `scribeNewEvent`.
-		let unsignedEvent = signedEvent.unsignedEvent
-		try? authorIndex.setEntry(key: unsignedEvent.publicKey, value: unsignedEvent.id, flags: [.noDupData], tx: tx)
-		try? applicationIndex.setEntry(key: unsignedEvent.application, value: unsignedEvent.id, flags: [.noDupData], tx: tx)
-		try? kindIndex.setEntry(key: unsignedEvent.kind, value: unsignedEvent.id, flags: [.noDupData], tx: tx)
-		try? dateIndex.setEntry(key: unsignedEvent.date, value: unsignedEvent.id, flags: [.noDupData], tx: tx)
-
-		for tag in unsignedEvent.tags.array {
-			guard let unwrappedTag = tag.unwrap(as: EventTag.self) else { continue }
-			try? tagIndex.setEntry(key: unwrappedTag, value: unsignedEvent.id, flags: [.noDupData], tx: tx)
-		}
-
-		let kindInt = unsignedEvent.kind.RAW_native() % 40_000
-		if !NostrKindCategory.nonReplaceable.range.contains(kindInt) {
-			let replaceableKey = try ReplaceableKey(event: unsignedEvent)
-			let datedId = DatedID(date: unsignedEvent.date, id: unsignedEvent.id)
-			try? replaceableEvents.setEntry(key: replaceableKey, value: datedId, flags: [.noDupData], tx: tx)
-		}
 	}
 }

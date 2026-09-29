@@ -18,14 +18,16 @@ fileprivate func isNewer(_ lhs: TesseraSignedEvent, than rhs: TesseraSignedEvent
 
 extension TesseraDB {
 	/// Returns the nostr event for the specified `NOSTR_id`
+	@MDB_transact(.readOnly)
 	public func queryEventID(_ id: NOSTR_id) throws -> TesseraSignedEvent {
-		let newTrans = try Transaction<Read>(env:env)
-		return try signedEvents.loadEntry(key: id, tx: newTrans)
+		guard let event = try #load(TesseraDB.self, database: \.signedEvents, key: id) else { throw LMDBError.notFound }
+		return event
 	}
 	
 	/// Gets all filter eligible ids.
 	/// Returns the tuple containing all filter eligible ids and all author ids.
-	public func getFilterEligibleIds<M: TransactionMode>(filters:[Filter], tx: borrowing Transaction<M>) throws -> (Set<NOSTR_id>, Set<NOSTR_id>) {
+	@MDB_transact(.readOnly)
+	public func getFilterEligibleIds(filters:[Filter]) throws -> (Set<NOSTR_id>, Set<NOSTR_id>) {
 		var allAuthors = Set<NOSTR_id>()
 		var allFilterIds = Set<NOSTR_id>()
 		for filter in filters {
@@ -46,7 +48,7 @@ extension TesseraDB {
 				authorIds = Set<NOSTR_id>()
 				for author in filter.authors {
 					do {
-						try authorIndex.cursor(tx: tx) { cursor in
+						try #cursor(TesseraDB.self, database: \.authorIndex) { cursor in
 							// Guard with containsEntry first: opSet throws (and fatals via the
 							// RAW_access `try!`) when the key isn't present in the index.
 							guard try cursor.containsEntry(key: author) else { return }
@@ -66,7 +68,7 @@ extension TesseraDB {
 				kindIds = Set<NOSTR_id>()
 				for kind in filter.kinds {
 					do {
-						try kindIndex.cursor(tx: tx) { cursor in
+						try #cursor(TesseraDB.self, database: \.kindIndex) { cursor in
 							guard try cursor.containsEntry(key: kind) else { return }
 							let id = try cursor.opSet(key: kind)
 							kindIds.insert(id)
@@ -83,7 +85,7 @@ extension TesseraDB {
 				applicationIds = Set<NOSTR_id>()
 				for application in filter.applications {
 					do {
-						try applicationIndex.cursor(tx: tx) { cursor in
+						try #cursor(TesseraDB.self, database: \.applicationIndex) { cursor in
 							guard try cursor.containsEntry(key: application) else { return }
 							let id = try cursor.opSet(key: application)
 							applicationIds.insert(id)
@@ -108,7 +110,7 @@ extension TesseraDB {
 						var iterator = eventTags.makeIterator()
 						if let firstTag = iterator.next() {
 							tagIds = Set<NOSTR_id>()
-							try tagIndex.cursor(tx: tx) { cursor in
+							try #cursor(TesseraDB.self, database: \.tagIndex) { cursor in
 								guard try cursor.containsEntry(key: firstTag) else { return }
 								let id = try cursor.opSet(key: firstTag)
 								tagIds.insert(id)
@@ -118,7 +120,7 @@ extension TesseraDB {
 							}
 							while let tag = iterator.next() {
 								var newTagIds = Set<NOSTR_id>()
-								try tagIndex.cursor(tx: tx) { cursor in
+								try #cursor(TesseraDB.self, database: \.tagIndex) { cursor in
 									guard try cursor.containsEntry(key: tag) else {
 										newTagIds = []
 										return
@@ -143,7 +145,7 @@ extension TesseraDB {
 			if filter.since != nil || filter.until != nil {
 				dateIds = Set<NOSTR_id>()
 				do {
-					try dateIndex.cursor(tx: tx) { cursor in
+					try #cursor(TesseraDB.self, database: \.dateIndex) { cursor in
 						// The date index is sorted ascending by `NOSTR_date`. Iterate it in order,
 						// collecting ids whose date falls within [since, until]. Both bounds are
 						// inclusive, matching NIP-01 and `applyTesseraFilter`. `opFirst`/`opNext`
@@ -193,16 +195,16 @@ extension TesseraDB {
 	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
 	///
 	/// Uses a 'dumb' filter. Ignores deletions or updates on events.
+	@MDB_transact(.readOnly)
 	public func queryEventsByDumbFilter(filters:[Filter], user: PublicKey? = nil) throws -> [TesseraSignedEvent] {
-		let newTrans = try Transaction<Read>(env:env)
-		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters, tx: newTrans)
+		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters)
 		guard !allFilterIds.isEmpty else {
 			return []
 		}
 		// Removing ids for deleted events
 		do {
 			var kind5Ids = Set<NOSTR_id>()
-			try kindIndex.cursor(tx: newTrans) { cursor in
+			try #cursor(TesseraDB.self, database: \.kindIndex) { cursor in
 				// Kind-5 (deletion) events may not exist in the index; guard before opSet.
 				guard try cursor.containsEntry(key: NOSTR_kind(RAW_native: 5)) else { return }
 				let id = try cursor.opSet(key: NOSTR_kind(RAW_native: 5))
@@ -214,7 +216,7 @@ extension TesseraDB {
 			
 			if !allAuthors.isEmpty { kind5Ids.formIntersection(allAuthors) }
 			var deleteIds = Set<NOSTR_id>()
-			try signedEvents.cursor(tx:newTrans) { cursor in
+			try #cursor(TesseraDB.self, database: \.signedEvents) { cursor in
 				for id in kind5Ids {
 					let signedEvent = try cursor.opSet(key: id)
 					for tag in signedEvent.unsignedEvent.tags.array {
@@ -230,7 +232,7 @@ extension TesseraDB {
 		} catch {}
 		
 		var queriedEvents:[TesseraSignedEvent] = []
-		try signedEvents.cursor(tx:newTrans) { cursor in
+		try #cursor(TesseraDB.self, database: \.signedEvents) { cursor in
 			for id in allFilterIds {
 				// `filter.ids` are vetted against the index DBs below, but the ids field itself
 				// is taken verbatim from the filter and may reference events that were never
@@ -245,7 +247,7 @@ extension TesseraDB {
 		}
 		if let user = user {
 			let uniqueKinds = Array(Set(queriedEvents.map { $0.unsignedEvent.kind }))
-			guard try checkReadAccess(user: user, kinds: uniqueKinds, tx: newTrans) else {
+			guard try checkReadAccess(user: user, kinds: uniqueKinds) else {
 				throw AccessLevelError.invalidReadAccess
 			}
 		}
@@ -257,9 +259,9 @@ extension TesseraDB {
 	/// Thus, a signed event only needs to match all of the constraints of a single filter to be returned.
 	///
 	/// Uses a 'smart' filter. Respects deletions and updates on events.
+	@MDB_transact(.readOnly)
 	public func queryEventsBySmartFilter(filters:[Filter], user: PublicKey? = nil) throws -> [TesseraSignedEvent] {
-		let newTrans = try Transaction<Read>(env:env)
-		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters, tx: newTrans)
+		var (allFilterIds, allAuthors) = try getFilterEligibleIds(filters: filters)
 		guard !allFilterIds.isEmpty else {
 			return []
 		}
@@ -267,7 +269,7 @@ extension TesseraDB {
 		// Removing ids for deleted events
 		do {
 			var kind5Ids = Set<NOSTR_id>()
-			try kindIndex.cursor(tx: newTrans) { cursor in
+			try #cursor(TesseraDB.self, database: \.kindIndex) { cursor in
 				// Kind-5 (deletion) events may not exist in the index; guard before opSet.
 				guard try cursor.containsEntry(key: NOSTR_kind(RAW_native: 5)) else { return }
 				let id = try cursor.opSet(key: NOSTR_kind(RAW_native: 5))
@@ -279,7 +281,7 @@ extension TesseraDB {
 			
 			if !allAuthors.isEmpty { kind5Ids.formIntersection(allAuthors) }
 			var deleteIds = Set<NOSTR_id>()
-			try signedEvents.cursor(tx:newTrans) { cursor in
+			try #cursor(TesseraDB.self, database: \.signedEvents) { cursor in
 				for id in kind5Ids {
 					let signedEvent = try cursor.opSet(key: id)
 					for tag in signedEvent.unsignedEvent.tags.array {
@@ -297,7 +299,7 @@ extension TesseraDB {
 		// Now get the signed events for all remaining ids.
 		// Then need to filter out old events for any updated events.
 		var queriedEvents:[TesseraSignedEvent] = []
-		try signedEvents.cursor(tx:newTrans) { cursor in
+		try #cursor(TesseraDB.self, database: \.signedEvents) { cursor in
 			for id in allFilterIds {
 				// `filter.ids` may reference events that were never stored or were force-deleted;
 				// skip such ids rather than letting a single stale id abort the whole query.
@@ -319,7 +321,7 @@ extension TesseraDB {
 			
 			let key = try ReplaceableKey(event: unsignedEvent)
 			
-			try replaceableEvents.cursor(tx: newTrans) { cursor in
+			try #cursor(TesseraDB.self, database: \.replaceableEvents) { cursor in
 				// The replaceable key may not exist (e.g. it was force-deleted); guard before opSet.
 				guard try cursor.containsEntry(key: key) else { return }
 				_ = try cursor.opSet(key: key)
@@ -335,7 +337,7 @@ extension TesseraDB {
 		
 		if let user = user {
 			let uniqueKinds = Array(Set(upToDateEvents.map { $0.unsignedEvent.kind }))
-			guard try checkReadAccess(user: user, kinds: uniqueKinds, tx: newTrans) else {
+			guard try checkReadAccess(user: user, kinds: uniqueKinds) else {
 				throw AccessLevelError.invalidReadAccess
 			}
 		}
