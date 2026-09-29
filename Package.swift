@@ -29,18 +29,13 @@ let package = Package(
 	],
 	dependencies:[
 		.package(url:"https://github.com/tannerdsilva/rawdog.git", "22.0.0"..<"23.0.0"),
-//		.package(url:"https://github.com/tannerdsilva/QuickLMDB.git", "14.0.0"..<"15.0.0"),
-		.package(name:"QuickLMDB", path:"../QuickLMDB-v22rewrite"),
+		.package(url:"https://github.com/tannerdsilva/QuickLMDB.git", "16.0.0"..<"17.0.0"),
 		.package(url: "https://github.com/bwyma1/nostr-kit-swift", "0.0.0"..<"1.0.0"),
 		.package(url:"https://github.com/bwyma1/openpgp-kit-swift", "0.0.0"..<"1.0.0"),
-		//.package(url:"https://github.com/tannerdsilva/wireguard-swift", revision:"7245b1ee6ecae571318900c4343e97526c67868b"),
-		.package(url:"https://github.com/tannerdsilva/wireguard-swift", branch:"master"),
-
+		.package(url:"https://github.com/tannerdsilva/wireguard-swift", "0.0.0"..<"1.0.0"),
 		.package(url:"https://github.com/apple/swift-nio.git", "2.81.0"..<"3.0.0"),
 		.package(url:"https://github.com/apple/swift-log.git", "1.0.0"..<"2.0.0"),
-//		.package(url:"https://github.com/tannerdsilva/bedrock.git", "7.1.0"..<"8.0.0"),
-		.package(url:"https://github.com/tannerdsilva/bedrock.git", branch:"v22-rewrite"),
-
+		.package(url:"https://github.com/tannerdsilva/bedrock.git", "8.0.0"..<"9.0.0"),
 		.package(url:"https://github.com/swift-server/swift-service-lifecycle.git", "2.6.3"..<"3.0.0"),
 		.package(url:"https://github.com/apple/swift-argument-parser.git", "1.5.0"..<"2.0.0"),
 	],

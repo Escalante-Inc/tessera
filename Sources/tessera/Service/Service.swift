@@ -114,7 +114,7 @@ final class TesseraService: Service {
 		let cliLogger = tempLogger
 		
 		let nostrRequests = NostrRequestsStore()
-		let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
+		let tesseraDB = try TesseraDB.openTessera(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
 		
 		// Load the Wireguard peers from the json encoded configuration file.
 		let jsonURL = URL(fileURLWithPath: configurationPath.appendingPathComponent("peer-config.json").path())

@@ -1,13 +1,13 @@
 {
-  "originHash" : "1ac9d2b8265f7e856cc253216407ee8621b8d122bc7924e5fffd9fafc27c1745",
+  "originHash" : "cfe69ca1c4800e4e7102f65a078a5d87552675aedcc5c918d3ac8d7b37cc1cb4",
   "pins" : [
     {
       "identity" : "bedrock",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tannerdsilva/bedrock.git",
       "state" : {
-        "branch" : "v22-rewrite",
-        "revision" : "6c92dd55c6c39bb8d416d97d153c81a8a81149a9"
+        "revision" : "e6225cb114c6daf0f39ea2af765a60106566160a",
+        "version" : "8.0.0"
       }
     },
     {
@@ -35,6 +35,15 @@
       "state" : {
         "revision" : "e5574ba70f6b65a08d78db972e063fd839c62068",
         "version" : "0.2.1"
+      }
+    },
+    {
+      "identity" : "quicklmdb",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tannerdsilva/QuickLMDB",
+      "state" : {
+        "revision" : "588b11d6de70e4a610ae8934d0e293c7301ac28b",
+        "version" : "16.0.0"
       }
     },
     {
@@ -132,8 +141,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tannerdsilva/wireguard-swift",
       "state" : {
-        "branch" : "master",
-        "revision" : "b2dbd057996cfe0f96ab3307aa0ce0aab11f12ea"
+        "revision" : "c44539e0e8fc2b1513d1d9bfeb6e963982f23bde",
+        "version" : "0.1.1"
       }
     }
   ],

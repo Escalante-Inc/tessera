@@ -61,8 +61,8 @@ final class NegentropySyncE2ETests {
 		// Two entirely independent tessera databases.
 		try? TesseraDB.deleteEnvironment(base: base, environment: "aliceSync", logLevel: .error)
 		try? TesseraDB.deleteEnvironment(base: base, environment: "bobSync", logLevel: .error)
-		aliceDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: "aliceSync")
-		bobDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: "bobSync")
+		aliceDB = try TesseraDB.openTessera(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: "aliceSync")
+		bobDB = try TesseraDB.openTessera(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: "bobSync")
 
 		// Alice's database: a user + one note unique to her.
 		aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [1]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "SyncAlice"))).sign(as: aliceEd25519PrivateKey)
@@ -269,7 +269,7 @@ final class NegentropySyncE2ETests {
 	@Test func syncWithEmptyDatabaseConverges() async throws {
 		// A fresh, entirely empty bob-side database.
 		try? TesseraDB.deleteEnvironment(base: base, environment: "bobEmpty", logLevel: .error)
-		let bobEmpty = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: "bobEmpty")
+		let bobEmpty = try TesseraDB.openTessera(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: "bobEmpty")
 		defer { try? TesseraDB.deleteEnvironment(base: base, environment: "bobEmpty", logLevel: .trace) }
 
 		#expect(bobEmpty.eventCount == 0)
@@ -284,7 +284,7 @@ final class NegentropySyncE2ETests {
 	/// Empty database on the INITIATOR side also converges.
 	@Test func syncEmptyInitiatorConverges() async throws {
 		try? TesseraDB.deleteEnvironment(base: base, environment: "aliceEmpty", logLevel: .error)
-		let aliceEmpty = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: "aliceEmpty")
+		let aliceEmpty = try TesseraDB.openTessera(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: "aliceEmpty")
 		defer { try? TesseraDB.deleteEnvironment(base: base, environment: "aliceEmpty", logLevel: .trace) }
 
 		try await self.syncOnce(alice: aliceEmpty, bob: bobDB)
@@ -494,8 +494,8 @@ final class NegentropySyncE2ETests {
 		let envB = "bobScale\(suffix)"
 		try? TesseraDB.deleteEnvironment(base: base, environment: envA, logLevel: .error)
 		try? TesseraDB.deleteEnvironment(base: base, environment: envB, logLevel: .error)
-		let a = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: envA)
-		let b = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: envB)
+		let a = try TesseraDB.openTessera(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: envA)
+		let b = try TesseraDB.openTessera(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error, environment: envB)
 		try a.scribeNewUser(signedEvent: aliceProfileEvent, logLevel: .error)
 		try a.scribeNewUser(signedEvent: bobProfileEvent, logLevel: .error)
 		try b.scribeNewUser(signedEvent: bobProfileEvent, logLevel: .error)

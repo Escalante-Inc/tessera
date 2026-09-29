@@ -79,7 +79,7 @@ struct CLI:AsyncParsableCommand {
 		var name: String
 		
 		func run() async throws {
-			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
+			let tesseraDB = try TesseraDB.openTessera(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
 			let openPGPConnection = OpenPGPConnection(logLevel: .debug)
 			try await openPGPConnection.connectToYubikey()
 			try await openPGPConnection.startOpenPGP()
@@ -115,7 +115,7 @@ struct CLI:AsyncParsableCommand {
 		var userName:String
 
 		func run() async throws {
-			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
+			let tesseraDB = try TesseraDB.openTessera(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
 			var filters = readPermissions.map { Filter(kinds: [NOSTR_kind(RAW_native: 1)], tags: [AccessLevelNameTag(value: Encoded.String($0))]) }
 			var events = try tesseraDB.queryEventsBySmartFilter(filters: filters)
 			let readPermNumbers:[UInt8] = events.map({
@@ -165,7 +165,7 @@ struct CLI:AsyncParsableCommand {
 		var adminName:String
 
 		func run() async throws {
-			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
+			let tesseraDB = try TesseraDB.openTessera(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
 			let (signingPubKey, signingPrivKey) = try RAW_ed25519.generateKeys(secretKey: myPrivateKey)
 			
 			let userEvent = try UnsignedEvent(publicKey: signingPubKey,
@@ -191,7 +191,7 @@ struct CLI:AsyncParsableCommand {
 		var adminName:String
 
 		func run() async throws {
-			let tesseraDB = try TesseraDB(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
+			let tesseraDB = try TesseraDB.openTessera(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
 			let openPGPConnection = OpenPGPConnection(logLevel: .debug)
 			try await openPGPConnection.connectToYubikey()
 			try await openPGPConnection.startOpenPGP()

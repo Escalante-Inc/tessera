@@ -91,7 +91,7 @@ extension TesseraTests {
 			// instances of this suite (one per test), so a leftover DB would cause duplicate-key
 			// failures on the shared `~/tessera.mdb`.
 			try? TesseraDB.deleteEnvironment(base: base, environment: "tessera", logLevel: .error)
-			self.tesseraDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
+			self.tesseraDB = try TesseraDB.openTessera(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
 			
 			aliceProfileEvent = try UnsignedEvent(publicKey: aliceEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [1]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Alice"))).sign(as: aliceEd25519PrivateKey)
 			bobProfileEvent = try UnsignedEvent(publicKey: bobEd25519PublicKey, tags: [ReadAccessLevels(value: UserAccessLevel(accessLevels: [0,1])), WriteAccessLevels(value: UserAccessLevel(accessLevels: [0,2]))], application: 0, kind: 0, content: ByteBuffer(rawObject: User(userName: "Bob"))).sign(as: bobEd25519PrivateKey)
@@ -550,7 +550,7 @@ extension TesseraTests {
 			// instances of this suite (one per test), so a leftover DB would cause duplicate-key
 			// failures on the shared `~/tessera.mdb`.
 			try? TesseraDB.deleteEnvironment(base: base, environment: "tessera", logLevel: .error)
-			self.tesseraDB = try TesseraDB(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
+			self.tesseraDB = try TesseraDB.openTessera(base: base, memoryMapSize: size_t(base.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .error)
 		}
 		
 		@Test func fillAndQueryDatabase() throws {
