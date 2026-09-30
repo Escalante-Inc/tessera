@@ -413,57 +413,6 @@ extension TesseraTests {
 			#expect(bounded.contains { $0.unsignedEvent.id == boundaryEvent.unsignedEvent.id })
 		}
 
-		@Test func forceUpdateEventRewritesIndexes() throws {
-			// Fresh event so the test is independent of other tests' mutations of the
-			// shared suite database (a prior test may have force-deleted aliceSignedEvent).
-			let original = try UnsignedEvent(
-				publicKey: aliceEd25519PublicKey,
-				tags: [], application: 0, kind: 5_000,
-				content: ByteBuffer(string: "Original Content")).sign(as: aliceEd25519PrivateKey)
-			try tesseraDB.scribeNewEvent(signedEvent: original, logLevel: .trace)
-			let originalID = original.unsignedEvent.id
-
-			tesseraDB.forceUpdateEvent(id: originalID, admin: adminEd25519PrivateKey, newContent: ByteBuffer(string: "Rewritten Content"))
-
-			// Original id must no longer exist in the main store.
-			let byOriginalID = try tesseraDB.queryEventsBySmartFilter(filters: [Filter(ids: [originalID])])
-			#expect(!byOriginalID.contains { $0.unsignedEvent.id == originalID })
-
-			// The rewritten event (same kind, uri-relevant fields, fresh id + content) must be
-			// reachable through the kind index — it must not be invisible to queries.
-			let byKind = try tesseraDB.queryEventsBySmartFilter(filters: [Filter(kinds: [NOSTR_kind(RAW_native: 5_000)])])
-			#expect(byKind.contains { $0.unsignedEvent.content == ByteBuffer(string: "Rewritten Content") })
-			#expect(!byKind.contains { $0.unsignedEvent.id == originalID })
-			#expect(!byKind.contains { $0.unsignedEvent.content == ByteBuffer(string: "Original Content") })
-		}
-
-		@Test func forceUpdateEventFilteredRewritesIndexes() throws {
-			// Scribe two fresh events so the filter selects exactly these.
-			let originalA = try UnsignedEvent(
-				publicKey: aliceEd25519PublicKey,
-				tags: [], application: 0, kind: 5_000,
-				content: ByteBuffer(string: "A Original")).sign(as: aliceEd25519PrivateKey)
-			let originalB = try UnsignedEvent(
-				publicKey: bobEd25519PublicKey,
-				tags: [], application: 0, kind: 5_000,
-				content: ByteBuffer(string: "B Original")).sign(as: bobEd25519PrivateKey)
-			try tesseraDB.scribeNewEvent(signedEvent: originalA, logLevel: .trace)
-			try tesseraDB.scribeNewEvent(signedEvent: originalB, logLevel: .trace)
-			let idA = originalA.unsignedEvent.id
-			let idB = originalB.unsignedEvent.id
-
-			tesseraDB.forceUpdateEventFiltered(
-				filters: [Filter(ids: [idA, idB])],
-				admin: adminEd25519PrivateKey,
-				newContent: ByteBuffer(string: "Filtered Rewrite"))
-
-			// Both originals gone, both rewrites reachable through the kind index.
-			let byKind = try tesseraDB.queryEventsBySmartFilter(filters: [Filter(kinds: [NOSTR_kind(RAW_native: 5_000)])])
-			#expect(!byKind.contains { $0.unsignedEvent.id == idA })
-			#expect(!byKind.contains { $0.unsignedEvent.id == idB })
-			#expect(byKind.filter { $0.unsignedEvent.content == ByteBuffer(string: "Filtered Rewrite") }.count == 2)
-		}
-
 		@Test func smartFilterSkipsMissingIds() throws {
 			// A filter whose `ids` field references an event that was never stored must not
 			// abort the whole query — NIP-01 requires missing ids to be skipped while the

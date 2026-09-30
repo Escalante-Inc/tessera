@@ -33,9 +33,9 @@ Key traits:
   - `UserIndex` (Strict, `PublicKey` → `NOSTR_id`) — maps user pubkey to their kind-0 profile event id.
   - `ReplaceableEvents` (DupSort, `ReplaceableKey` → `DatedID`) — used to resolve the latest revision of replaceable events.
   - `deleteEnvironment(base:environment:logLevel:)` removes the `.mdb` + `.mdb-lock` files.
-- `WriteOperations/` — `scribeNewEvent` (validates write access, rejects ephemeral, handles kind-5 deletions, writes event + all indexes), `scribeNewUser`, `forceDeleteEvent(_Filtered)`, `forceUpdateEvent(_Filtered)`, `clearEventsDatabase`.
+- `WriteOperations/` — `scribeNewEvent` (validates write access, rejects ephemeral, handles kind-5 deletions, writes event + all indexes), `scribeNewUser`, `forceDeleteEvent(_Filtered)`, `clearEventsDatabase`.
 - `ReadOperations/` — `queryEventsBySmartFilter` (respects deletions & updates) and `queryEventsByDumbFilter` (raw). `getFilterEligibleIds` intersects within a filter's fields (AND) and unions across filters (OR). `Stats.swift` (`eventCount`). `CheckUserAccess.swift` (read/write access checks).
-- `SupportingFunctions.swift` — `createKind(accessLevel:kind:)`, `applyTesseraFilter`, `eventMatchesFilters`, `createNewUpdatedEvent`.
+- `SupportingFunctions.swift` — `createKind(accessLevel:kind:)`, `applyTesseraFilter`, `eventMatchesFilters`.
 - `Structs/` — `User` (kind-0 content), `TesseraKinds` (reserved kinds: user=0, accessLevel=1), `Indexing/` (`ReplaceableKey`, `DatedID`, `NostrKindCategory`), `Error/` (`SignedNoteError`, `AccessLevelError`).
 
 ### Sources/tessera-core/ClientReceiver

@@ -27,7 +27,7 @@ public func applyTesseraFilter<Content:NOSTR_event_content>(_ event: NOSTR_event
 		hasTags = false
 	}
 	if((filter.ids == [] || filter.ids.contains(event.unsignedEvent.id)) &&
-	   (filter.authors == [] || filter.authors.contains(event.unsignedEvent.publicKey) || filter.authors.contains(author(ofEvent: event))) &&
+	   (filter.authors == [] || filter.authors.contains(event.unsignedEvent.publicKey)) &&
 	   (filter.applications == [] || filter.applications.contains(event.unsignedEvent.application)) &&
 	   (filter.kinds == [] || filter.kinds.contains(event.unsignedEvent.kind)) &&
 	   (filter.since == nil || filter.since! <= event.unsignedEvent.date) &&
@@ -54,49 +54,3 @@ public func eventMatchesFilters<Content:NOSTR_event_content>(_ event: NOSTR_even
 	return false
 }
 
-public func author<Content:NOSTR_event_content>(ofEvent event: NOSTR_event_signed<UnsignedEvent<Content>>) -> PublicKey {
-//	let tagNameString = "author"
-//	let tagName = tagNameString.data(using: .utf8)!.withUnsafeBytes { ptr in
-//		NOSTR_tag_name(RAW_staticbuff: ptr.baseAddress!)
-//	}
-//	for tag in event.unsignedEvent.tags.array {
-//		if tag.NOSTR_tag_index_field == tagName {
-//			return tag.NOSTR_tag_values.array.first! as! PublicKey
-//		}
-//	}
-	return event.unsignedEvent.publicKey
-}
-
-internal func createNewUpdatedEvent<Content:NOSTR_event_content>(_ event: NOSTR_event_signed<UnsignedEvent<Content>>, adminSigningKey:MemoryGuarded<RAW_ed25519.PrivateKey>, addTags: [any NOSTR_tag]?, removeTags: [any NOSTR_tag]?, overwriteTags: [any NOSTR_tag]?, content: Content?) throws -> NOSTR_event_signed<UnsignedEvent<Content>> {
-	let eventContent = content ?? event.unsignedEvent.content
-	var eventTags: [any NOSTR_tag] = []
-	if let overwriteTags {
-		eventTags = overwriteTags
-	} else {
-		eventTags = event.unsignedEvent.tags.array
-		if let addTags, !addTags.isEmpty {
-			for tag in addTags {
-				if !eventTags.contains(where: { $0.isEqual(to: tag) }) {
-					eventTags.append(tag)
-				}
-			}
-		}
-		if let removeTags, !removeTags.isEmpty {
-			eventTags.removeAll { existingTag in
-				removeTags.contains(where: { $0.isEqual(to: existingTag) })
-			}
-		}
-	}
-//	eventTags.append(try createAuthorTag(author: event.unsignedEvent.publicKey))
-	let unsignedEvent = try UnsignedEvent(publicKey: event.unsignedEvent.publicKey, date: NOSTR_date(date: Date()), tags: eventTags, application: event.unsignedEvent.application, kind: event.unsignedEvent.kind, content: eventContent)
-	return try unsignedEvent.sign(as: adminSigningKey)
-}
-
-//internal func createAuthorTag(author: PublicKey) throws -> EventTag {
-//	let dateChanged = NOSTR_date(date: Date())
-//	let tagNameString = "author"
-//	let tagName = tagNameString.data(using: .utf8)!.withUnsafeBytes { ptr in
-//		NOSTR_tag_name(RAW_staticbuff: ptr.baseAddress!)
-//	}
-//	return EventTag(indexField: tagName, value: <#T##EventTag.tagValueType#>)
-//}
