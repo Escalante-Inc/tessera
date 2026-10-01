@@ -54,7 +54,7 @@ let package = Package(
 				.product(name:"ServiceLifecycle", package:"swift-service-lifecycle"),
 				.product(name:"ArgumentParser", package:"swift-argument-parser"),
 				.product(name:"wireguard-userspace-nio", package:"wireguard-swift"),
-				.product(name: "openpgp-kit", package: "openpgp-kit-swift"),
+				.product(name: "openpgp-kit", package: "openpgp-kit-swift", condition: .when(platforms: [.macOS])),
 				"tessera-core"
 			],
 			exclude: ["SmartCard.entitlements"]
