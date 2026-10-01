@@ -8,7 +8,9 @@ import NIO
 import Logging
 import ArgumentParser
 import ServiceLifecycle
+#if canImport(openpgp_kit_swift)
 import openpgp_kit_swift
+#endif
 import nostr_kit_swift
 import bedrock
 
@@ -21,17 +23,16 @@ struct CLI:AsyncParsableCommand {
 	static let configuration = CommandConfiguration(
 		commandName:"tessera-service",
 		abstract:"a server side program for the calendar app",
-		subcommands:[
-				Run.self,
-				GenerateKeys.self,
-				GenerateEd25519Keys.self,
-				CreateNewAccessLevel.self,
-				CreateUser.self,
-				CreateUnboundedAdmin.self,
-				CreateUnboundedYubikeyAdmin.self,
-				Config.self
-			]
-		)
+		subcommands: commandList
+	)
+	
+	static var commandList: [ParsableCommand.Type] {
+		var list: [ParsableCommand.Type] = [Run.self, GenerateKeys.self, GenerateEd25519Keys.self, CreateUnboundedAdmin.self, Config.self]
+		#if canImport(openpgp_kit_swift)
+		list.append(contentsOf: [CreateNewAccessLevel.self, CreateUser.self, CreateUnboundedYubikeyAdmin.self])
+		#endif
+		return list
+	}
 	
 	struct GenerateKeys:ParsableCommand {
 		static let configuration = CommandConfiguration(
@@ -64,6 +65,7 @@ struct CLI:AsyncParsableCommand {
 		}
 	}
 	
+#if canImport(openpgp_kit_swift)
 	struct CreateNewAccessLevel:AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
 			abstract:"Generate a new Tessera access level. Requires master level access yubikey to run."
@@ -96,7 +98,9 @@ struct CLI:AsyncParsableCommand {
 			}
 		}
 	}
+	#endif
 	
+	#if canImport(openpgp_kit_swift)
 	struct CreateUser:AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
 			abstract:"Creates a new user for the tesserae. Requires a yubikey to be plugged into the device."
@@ -150,6 +154,7 @@ struct CLI:AsyncParsableCommand {
 			}
 		}
 	}
+	#endif
 	
 	struct CreateUnboundedAdmin:AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
@@ -179,6 +184,7 @@ struct CLI:AsyncParsableCommand {
 		}
 	}
 	
+#if canImport(openpgp_kit_swift)
 	struct CreateUnboundedYubikeyAdmin:AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
 			abstract:"Creates a new user for the tesserae. Requires a yubikey to be plugged into the device."
@@ -214,6 +220,7 @@ struct CLI:AsyncParsableCommand {
 			}
 		}
 	}
+	#endif
 	
 	struct Run:AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
