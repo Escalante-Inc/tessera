@@ -651,4 +651,64 @@ final class NegentropySyncE2ETests {
 		}
 		#expect(aliceDB.eventCount == before)
 	}
+
+	/// A regression guard for the read-then-flush concord model: while a round is
+	/// mid-flight and parked on a stalled (offline / dropped-mid-sync) peer's
+	/// `receive()`, the sync path holds only a READ transaction, so a concurrent
+	/// WRITE must still acquire the LMDB writer immediately. Before the fix the
+	/// round held a WRITE transaction across the network exchange and this write
+	/// would block indefinitely.
+	///
+	/// Synchronous because `DispatchSemaphore.wait()` and the LMDB
+	/// `Transaction`/`commit` calls are `@available(*, noasync)`; the round runs
+	/// on a detached thread, exactly as `runConcordRoundAsync` does internally.
+	@Test func roundDoesNotBlockWriter() throws {
+		// A peer that blocks in `receive()` — the offline/dropped-mid-sync case.
+		final class StalledPeer: ConcordTransport, @unchecked Sendable {
+			typealias Key = NOSTR_id
+			typealias Value = TesseraSignedEvent
+			let entered = DispatchSemaphore(value: 0)   // receive() is now blocking
+			let release = DispatchSemaphore(value: 0)   // unblock the round
+			func send(_ message: ConcordMessage<NOSTR_id, TesseraSignedEvent>) throws {}
+			func receive() throws -> ConcordMessage<NOSTR_id, TesseraSignedEvent>? {
+				entered.signal()
+				release.wait()
+				return nil
+			}
+			func close() throws {}
+		}
+
+		let stalled = StalledPeer()
+		let env = aliceDB.syncEnvironment
+
+		// Run the round on its own thread; it parks inside receive(), holding
+		// only a read transaction.
+		let roundDone = DispatchSemaphore(value: 0)
+		Thread.detachNewThread {
+			defer { roundDone.signal() }
+			do {
+				try runConcordRoundSync(env: env, role: .initiator, transport: stalled)
+			} catch {
+				// The round aborts (prematureClose) when receive() returns nil.
+			}
+		}
+		// Ensure the round unblocks even if the assertions/transaction below throw.
+		defer { stalled.release.signal() }
+
+		// Wait until the round is genuinely blocked in receive().
+		stalled.entered.wait()
+
+		// While the round holds only a READ transaction, a concurrent WRITE must
+		// acquire the writer immediately. If it held a WRITE tx (pre-fix
+		// behaviour), this would block indefinitely.
+		let start = ContinuousClock.now
+		let writeTx = try Transaction<Write>(env: env)
+		try writeTx.commit()
+		let elapsed = start.duration(to: .now)
+		#expect(elapsed < .seconds(1), "writer was blocked by the in-flight round")
+
+		// Unblock the round and wait for its thread to finish.
+		stalled.release.signal()
+		roundDone.wait()
+	}
 }
