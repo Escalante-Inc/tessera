@@ -239,14 +239,20 @@ final class TesseraService: Service {
 										case .EVENT(let incomingEventMessage):
 											cliLogger.debug("Processing EVENT Message")
 											let event = incomingEventMessage.event
+											cliLogger.debug("Event signature valid: \(event.isValidSignature()) ; config:\(event.unsignedEvent.application) kind:\(event.unsignedEvent.kind.RAW_native()) id:\(String(describing: event.unsignedEvent.id))")
 											guard event.isValidSignature() else {
 												break
 											}
 											
 											do {
 												try tesseraDB.scribeNewEvent(signedEvent: event, logLevel: cliLogger.logLevel)
+												cliLogger.debug("Scribe committed OK")
 											} catch AccessLevelError.invalidWriteAccess {
 												try writeToInterface(publicKey: peerInfo.publicKey, data: NOSTR_message_NOTICE(noticeText: "User lacks write access credentials"))
+												cliLogger.debug("Scribe FAILED invalidWriteAccess")
+											} catch {
+												cliLogger.error("Scribe FAILED: \(error)")
+												throw error
 											}
 									
 											if event.unsignedEvent.kind.RAW_native() == 5 {
