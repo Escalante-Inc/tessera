@@ -133,8 +133,8 @@ final class TesseraService: Service {
 				// dedicated sync FIFO that the per-peer task feeds negentropy frames into.
 				var peerInfos:[(peer: TesseraPeer, syncFIFO: FIFO<ByteBuffer, Swift.Error>?)] = []
 				for peer in cfg.peers {
-					let peerInfo = TesseraPeer(publicKey: peer.publicKey, sharedKey: peer.sharedKey, endpoint: peer.endpoint, internalKeepAlive: peer.internalKeepAlive, isTessera: peer.isTessera, inboundData: FIFO<ByteBuffer, Swift.Error>())
-					peerInfos.append((peerInfo, peer.isTessera ? FIFO<ByteBuffer, Swift.Error>() : nil))
+					let peerInfo = TesseraPeer(publicKey: peer.publicKey, sharedKey: peer.sharedKey, endpoint: peer.endpoint, internalKeepAlive: peer.internalKeepAlive, isTessera: peer.isTessera, inboundData: try FIFO<ByteBuffer, Swift.Error>())
+					peerInfos.append((peerInfo, peer.isTessera ? try FIFO<ByteBuffer, Swift.Error>() : nil))
 				}
 				let myInterface = try WGInterface<KCPChannels>(staticPrivateKey: self.myPrivateKey, mtu:1400, initialConfiguration: peerInfos.map { $0.peer }, logLevel:.info, listeningPort: self.myPort)
 				
@@ -194,7 +194,7 @@ final class TesseraService: Service {
 						let iterator = peerInfo.inboundData?.makeAsyncConsumer()
 						while !Task.isCancelled {
 							do {
-								if let incomingSignal = try await iterator?.next(whenTaskCancelled: .finish) {
+								if let incomingSignal = try await iterator?.next(whenTaskCancelled: .finish(.success(()))) {
 									
 									// Route negentropy sync frames to the sync manager.
 									// Non-tessera peers are not expected to send these; they

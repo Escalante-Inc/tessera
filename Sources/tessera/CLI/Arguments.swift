@@ -9,7 +9,7 @@ extension RAW_dh25519.PublicKey:@retroactive ExpressibleByArgument {
 		guard let bytes = rawBytes, bytes.count == 32 else {
 			return nil
 		}
-		self = RAW_dh25519.PublicKey(RAW_decode: bytes.withUnsafeBytes { $0 })!
+		self = bytes.withUnsafeBytes { RAW_dh25519.PublicKey(RAW_decode: $0)! }
 	}
 }
 

@@ -75,7 +75,7 @@ struct TesseraPeer: PeerInformation, Codable {
 		let endpoint  = try container.decodeIfPresent(Endpoint.self, forKey: .endpoint)
 		let keepAlive = try container.decodeIfPresent(TimeAmount.self, forKey: .internalKeepAlive)
 		let isTessera = try container.decodeIfPresent(Bool.self, forKey: .isTessera) ?? false
-		let fifo = FIFO<ByteBuffer, Swift.Error>()
+		let fifo = try FIFO<ByteBuffer, Swift.Error>()
 
 		let publicKeyString = try container.decode(String.self, forKey: .publicKey)
 		let publicKeyBytes = try RAW_base64.decode(publicKeyString)

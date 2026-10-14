@@ -49,7 +49,7 @@ public struct TesseraClientConfiguration: Sendable {
 				 logLevel: Logger.Level = .info) {
 		guard let serverRaw = try? RAW_base64.decode(serverPublicKeyBase64), serverRaw.count == 32 else { return nil }
 		guard let myRaw = try? RAW_base64.decode(myPrivateKeyBase64), myRaw.count == 32 else { return nil }
-		let serverKey = RAW_dh25519.PublicKey(RAW_decode: serverRaw.withUnsafeBytes { $0 })!
+		let serverKey = serverRaw.withUnsafeBytes { RAW_dh25519.PublicKey(RAW_decode: $0)! }
 		guard let myKey = myRaw.withUnsafeBufferPointer({ ptr in MemoryGuarded<RAW_dh25519.PrivateKey>.init(RAW_decode: UnsafeRawBufferPointer(ptr)) }) else { return nil }
 		self.init(serverIP: serverIP, serverPort: serverPort, serverPublicKey: serverKey, myPrivateKey: myKey, mtu: mtu, logLevel: logLevel)
 	}
@@ -122,7 +122,7 @@ public final class TesseraClient: @unchecked Sendable {
 		let existing = state.withLock { $0.interface }
 		guard existing == nil else { return }
 
-		let fifo = FIFO<ByteBuffer, Swift.Error>()
+		let fifo = try FIFO<ByteBuffer, Swift.Error>()
 		let peerInfo = PeerInfo(
 			publicKey: configuration.serverPublicKey,
 			sharedKey: nil,
@@ -224,7 +224,7 @@ public final class TesseraClient: @unchecked Sendable {
 			let iterator = fifo.makeAsyncConsumer()
 			while !Task.isCancelled {
 				do {
-					guard let data = try await iterator.next(whenTaskCancelled: .finish) else { break }
+					guard let data = try await iterator.next(whenTaskCancelled: .finish(.success(()))) else { break }
 					data.withUnsafeReadableBytes { ptr in
 						self.onReceive?(ptr)
 					}

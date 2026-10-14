@@ -107,11 +107,11 @@ final class NegentropySyncE2ETests {
 		var logger = Logger(label: "concord-e2e")
 		logger.logLevel = .error
 
-		let bobFifo = FIFO<ByteBuffer, Swift.Error>()
+		let bobFifo = try FIFO<ByteBuffer, Swift.Error>()
 		let alicePeers = [(PeerInfo(publicKey: bobPublicKey, ipAddress: "127.0.0.1", port: 47101, internalKeepAlive: .seconds(20), inboundData: bobFifo))]
 		let aliceInterface = try WGInterface<KCPChannels>(staticPrivateKey: alicePrivateKey, mtu: 1400, initialConfiguration: alicePeers, logLevel: .error, listeningPort: 47100)
 
-		let aliceFifo = FIFO<ByteBuffer, Swift.Error>()
+		let aliceFifo = try FIFO<ByteBuffer, Swift.Error>()
 		let bobPeers = [(PeerInfo(publicKey: alicePublicKey, ipAddress: "127.0.0.1", port: 47100, internalKeepAlive: .seconds(20), inboundData: aliceFifo))]
 		let bobInterface = try WGInterface<KCPChannels>(staticPrivateKey: bobPrivateKey, mtu: 1400, initialConfiguration: bobPeers, logLevel: .error, listeningPort: 47101)
 
