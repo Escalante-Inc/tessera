@@ -82,7 +82,7 @@ struct TesseraPeer: PeerInformation, Codable {
 		guard publicKeyBytes.count == 32 else {
 			throw DecodingError.dataCorruptedError(forKey: .publicKey, in: container, debugDescription: "Public key must be 32 bytes.")
 		}
-		let publicKey = RAW_dh25519.PublicKey(RAW_decode: publicKeyBytes.withUnsafeBytes { $0 })!
+		let publicKey = publicKeyBytes.withUnsafeBytes { RAW_dh25519.PublicKey(RAW_decode: $0)! }
 
 		let sharedKeyString = try container.decodeIfPresent(String.self, forKey: .sharedKey)
 		guard let sharedKeyString = sharedKeyString else {

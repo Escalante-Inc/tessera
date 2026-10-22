@@ -11,7 +11,7 @@ public struct UserAccessLevel: Sendable, NOSTR_tag_value {
 			let bitIndex  = Int(level) % 8
 			bitArray[byteIndex] |= 1 << bitIndex
 		}
-		self.init(RAW_decode: bitArray.withUnsafeBytes { $0 })!
+		self = bitArray.withUnsafeBytes { UserAccessLevel(RAW_decode: $0)! }
 	}
 }
 
