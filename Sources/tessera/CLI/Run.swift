@@ -239,10 +239,12 @@ struct CLI:AsyncParsableCommand {
 		var myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>
 		@Option(help:"How often (in seconds) to reconcile with tessera peers via negentropy. Defaults to 30 seconds. Set to 0 to disable syncing.")
 		var syncInterval:TimeInterval = 30
+		@Option(help:"The logging verbosity for the relay service (and every subsystem inside it): trace, debug, info, notice, warning, error, critical. Defaults to debug.")
+		var logLevel:Logger.Level = .debug
 
 		func run() async throws {
 			let logger = Logger(label: "tessera-server")
-			let tesseraService = TesseraService(databasePath: databasePath, configurationPath: configurationPath, myPort: myPort, myPrivateKey: myPrivateKey, syncInterval: syncInterval)
+			let tesseraService = TesseraService(databasePath: databasePath, configurationPath: configurationPath, myPort: myPort, myPrivateKey: myPrivateKey, syncInterval: syncInterval, logLevel: logLevel)
 			try await ServiceGroup(services:[tesseraService], logger: logger).run()
 		}
 	}

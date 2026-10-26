@@ -99,22 +99,24 @@ final class TesseraService: Service {
 	/// round with each peer flagged as a tessera. The first round runs immediately
 	/// on startup; subsequent rounds run every `syncInterval` seconds.
 	let syncInterval:TimeInterval
+	let logLevel:Logger.Level
 	
-	init(databasePath:Path, configurationPath:Path, myPort:Int, myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>, syncInterval:TimeInterval = 30) {
+	init(databasePath:Path, configurationPath:Path, myPort:Int, myPrivateKey:MemoryGuarded<RAW_dh25519.PrivateKey>, syncInterval:TimeInterval = 30, logLevel:Logger.Level = .debug) {
 		self.databasePath = databasePath
 		self.configurationPath = configurationPath
 		self.myPort = myPort
 		self.myPrivateKey = myPrivateKey
 		self.syncInterval = syncInterval
+		self.logLevel = logLevel
 	}
 	
 	func run() async throws {
 		var tempLogger = Logger(label: "tessera-server-service")
-		tempLogger.logLevel = .debug
+		tempLogger.logLevel = self.logLevel
 		let cliLogger = tempLogger
 		
 		let nostrRequests = NostrRequestsStore()
-		let tesseraDB = try TesseraDB.openTessera(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: .debug)
+		let tesseraDB = try TesseraDB.openTessera(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: self.logLevel)
 		
 		// Load the Wireguard peers from the json encoded configuration file.
 		let jsonURL = URL(fileURLWithPath: configurationPath.appendingPathComponent("peer-config.json").path())
@@ -136,7 +138,7 @@ final class TesseraService: Service {
 					let peerInfo = TesseraPeer(publicKey: peer.publicKey, sharedKey: peer.sharedKey, endpoint: peer.endpoint, internalKeepAlive: peer.internalKeepAlive, isTessera: peer.isTessera, inboundData: try FIFO<ByteBuffer, Swift.Error>())
 					peerInfos.append((peerInfo, peer.isTessera ? try FIFO<ByteBuffer, Swift.Error>() : nil))
 				}
-				let myInterface = try WGInterface<KCPChannels>(staticPrivateKey: self.myPrivateKey, mtu:1400, initialConfiguration: peerInfos.map { $0.peer }, logLevel:.info, listeningPort: self.myPort)
+				let myInterface = try WGInterface<KCPChannels>(staticPrivateKey: self.myPrivateKey, mtu:1400, initialConfiguration: peerInfos.map { $0.peer }, logLevel:self.logLevel, listeningPort: self.myPort)
 				
 				foo.addTask {
 					try await myInterface.run()
@@ -171,7 +173,12 @@ final class TesseraService: Service {
 							interval: self.syncInterval
 						)
 						foo.addTask {
-							try await negentropyManager.runForever(gate: syncGate)
+							do {
+								try await negentropyManager.runForever(gate: syncGate)
+							} catch {
+								cliLogger.error("Negentropy sync loop exited for peer \(String(describing: peerInfo.publicKey)): \(String(describing: error))")
+								throw error
+							}
 						}
 					}
 					foo.addTask {
@@ -250,6 +257,12 @@ final class TesseraService: Service {
 											} catch AccessLevelError.invalidWriteAccess {
 												try writeToInterface(publicKey: peerInfo.publicKey, data: NOSTR_message_NOTICE(noticeText: "User lacks write access credentials"))
 												cliLogger.debug("Scribe FAILED invalidWriteAccess")
+											} catch LMDBError.mapFull {
+												cliLogger.critical("RELAY STORAGE EXHAUSTED (mapFull): the LMDB database is full; new events cannot be stored. Free disk space / grow the LMDB mmap to resume writes. Peer: \(String(describing: peerInfo.publicKey))")
+												throw LMDBError.mapFull
+											} catch LMDBError.mapResized {
+												cliLogger.critical("RELAY STORAGE EXHAUSTED (mapResized): the LMDB database grew beyond its allocated size; new events cannot be stored. Free disk space / grow the LMDB mmap to resume writes. Peer: \(String(describing: peerInfo.publicKey))")
+												throw LMDBError.mapResized
 											} catch {
 												cliLogger.error("Scribe FAILED: \(error)")
 												throw error
@@ -326,7 +339,11 @@ final class TesseraService: Service {
 							}
 							catch let error {
 								cliLogger.error("Failed to process incoming data", metadata: ["peer": "\(String(describing: peerInfo.publicKey))", "error": "\(String(describing: error))"])
-								try writeToInterface(publicKey: peerInfo.publicKey, data: NOSTR_message_NOTICE(noticeText: describeErrorForNotice(error)))
+								do {
+									try writeToInterface(publicKey: peerInfo.publicKey, data: NOSTR_message_NOTICE(noticeText: describeErrorForNotice(error)))
+								} catch let error {
+									cliLogger.error("Failed to send NOTICE", metadata: ["peer": "\(String(describing: peerInfo.publicKey))", "error": "\(String(describing: error))"])
+								}
 							}
 						}
 					}
