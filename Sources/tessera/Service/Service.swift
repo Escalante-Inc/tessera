@@ -8,13 +8,14 @@ import tessera_core
 import bedrock_fifo
 import bedrock
 import RAW
+import RAW_base64
 import RAW_dh25519
 import QuickLMDB
 
 /// Returns an accurate, client-safe description of an internal error, suitable for the
 /// text of a NOTICE message. The full error details are logged server-side (see the
 /// caller); only a concise description of what went wrong is exposed to the client.
-fileprivate func describeErrorForNotice(_ error: Error) -> String {
+fileprivate func describeErrorForNotice(_ error: Swift.Error) -> String {
 	switch error {
 	case AccessLevelError.userDoesNotExist:
 		return "The requesting user does not exist"
@@ -117,6 +118,10 @@ final class TesseraService: Service {
 		
 		let nostrRequests = NostrRequestsStore()
 		let tesseraDB = try TesseraDB.openTessera(base: databasePath, memoryMapSize: size_t(databasePath.getFileSize() + 512 * 1024 * 1024 * 1024), logLevel: self.logLevel)
+
+		// Peer transactions (events in, requests served, sync rounds) are recorded to a
+		// small JSONL file next to the database; the admin CLI/webui read it back.
+		let txLog = PeerTransactionLog(base: databasePath, logLevel: self.logLevel)
 		
 		// Load the Wireguard peers from the json encoded configuration file.
 		let jsonURL = URL(fileURLWithPath: configurationPath.appendingPathComponent("peer-config.json").path())
@@ -170,7 +175,8 @@ final class TesseraService: Service {
 							peer: peerInfo,
 							syncFIFO: syncFIFO,
 							logLevel: cliLogger.logLevel,
-							interval: self.syncInterval
+							interval: self.syncInterval,
+							transactionLog: txLog
 						)
 						foo.addTask {
 							do {
@@ -242,21 +248,46 @@ final class TesseraService: Service {
 					
 											let eoseMsg = NOSTR_message_EOSE(subscriptionID: request.subscriptionID)
 											try writeToInterface(publicKey: peerInfo.publicKey, data: eoseMsg)
-											
-										case .EVENT(let incomingEventMessage):
+
+											txLog.record(
+												peer: String(RAW_base64.encode(peerInfo.publicKey)),
+												direction: "outbound",
+												type: "req",
+												detail: "served \(signedEvents.count) events for subscription \"\(request.subscriptionID)\""
+											)
+
+											case .EVENT(let incomingEventMessage):
 											cliLogger.debug("Processing EVENT Message")
 											let event = incomingEventMessage.event
 											cliLogger.debug("Event signature valid: \(event.isValidSignature()) ; config:\(event.unsignedEvent.application) kind:\(event.unsignedEvent.kind.RAW_native()) id:\(String(describing: event.unsignedEvent.id))")
 											guard event.isValidSignature() else {
+												txLog.record(
+													peer: String(RAW_base64.encode(peerInfo.publicKey)),
+													direction: "inbound",
+													type: "event",
+													detail: "rejected: invalid signature (kind \(event.unsignedEvent.kind.RAW_native()))"
+												)
 												break
 											}
-											
+
 											do {
 												try tesseraDB.scribeNewEvent(signedEvent: event, logLevel: cliLogger.logLevel)
 												cliLogger.debug("Scribe committed OK")
+												txLog.record(
+													peer: String(RAW_base64.encode(peerInfo.publicKey)),
+													direction: "inbound",
+													type: "event",
+													detail: "scribed kind \(event.unsignedEvent.kind.RAW_native()) id \(String(RAW_base64.encode(event.unsignedEvent.id)))"
+												)
 											} catch AccessLevelError.invalidWriteAccess {
 												try writeToInterface(publicKey: peerInfo.publicKey, data: NOSTR_message_NOTICE(noticeText: "User lacks write access credentials"))
 												cliLogger.debug("Scribe FAILED invalidWriteAccess")
+												txLog.record(
+													peer: String(RAW_base64.encode(peerInfo.publicKey)),
+													direction: "inbound",
+													type: "event",
+													detail: "rejected: no write access for kind \(event.unsignedEvent.kind.RAW_native()) (notice sent)"
+												)
 											} catch LMDBError.mapFull {
 												cliLogger.critical("RELAY STORAGE EXHAUSTED (mapFull): the LMDB database is full; new events cannot be stored. Free disk space / grow the LMDB mmap to resume writes. Peer: \(String(describing: peerInfo.publicKey))")
 												throw LMDBError.mapFull

@@ -2,6 +2,7 @@ import Foundation
 import Logging
 import NIO
 import RAW
+import RAW_base64
 import RAW_dh25519
 import bedrock_fifo
 import QuickLMDB
@@ -58,6 +59,8 @@ struct NegentropySyncManager {
 	let syncFIFO: FIFO<ByteBuffer, Swift.Error>
 	let logLevel: Logger.Level
 	let interval: TimeInterval
+	/// Records sync rounds into the peer transaction log (nil disables recording).
+	let transactionLog: PeerTransactionLog?
 
 	/// True when this side plays the initiator role for this peer link.
 	var isInitiator: Bool {
@@ -96,6 +99,13 @@ struct NegentropySyncManager {
 		// reindex also self-heals any previously-synced poison and repopulates
 		// the indexes after the round's raw writes.
 		try tesseraDB.reindexAfterSync(logLevel: logLevel)
+
+		transactionLog?.record(
+			peer: String(RAW_base64.encode(peer.publicKey)),
+			direction: "bidirectional",
+			type: "sync",
+			detail: "concord round complete (role: \(isInitiator ? "initiator" : "responder"))"
+		)
 	}
 
 	/// Loops forever, running a sync round immediately and then every `interval` seconds.
@@ -109,6 +119,12 @@ struct NegentropySyncManager {
 					try await runOneRound()
 				}
 			} catch {
+				transactionLog?.record(
+					peer: String(RAW_base64.encode(peer.publicKey)),
+					direction: "bidirectional",
+					type: "sync",
+					detail: "concord round failed: \(String(describing: error))"
+				)
 				logger.error("Concord sync round failed", metadata: ["peer": "\(String(describing: peer.publicKey))", "error": "\(String(describing: error))"])
 			}
 			try await Task.sleep(for: .seconds(interval))

@@ -27,9 +27,12 @@ struct CLI:AsyncParsableCommand {
 	)
 	
 	static var commandList: [ParsableCommand.Type] {
-		var list: [ParsableCommand.Type] = [Run.self, GenerateKeys.self, GenerateEd25519Keys.self, CreateUnboundedAdmin.self, Config.self]
+		var list: [ParsableCommand.Type] = [Run.self, GenerateKeys.self, GenerateEd25519Keys.self, CreateUnboundedAdmin.self, Config.self, Admin.self]
 		#if canImport(openpgp_kit_swift)
 		list.append(contentsOf: [CreateNewAccessLevel.self, CreateUser.self, CreateUnboundedYubikeyAdmin.self])
+		#endif
+		#if canImport(WebUI)
+		list.append(WebUI.self)
 		#endif
 		return list
 	}

@@ -38,6 +38,7 @@ let package = Package(
 		.package(url:"https://github.com/tannerdsilva/bedrock.git", "9.0.0"..<"10.0.0"),
 		.package(url:"https://github.com/swift-server/swift-service-lifecycle.git", "2.6.3"..<"3.0.0"),
 		.package(url:"https://github.com/apple/swift-argument-parser.git", "1.5.0"..<"2.0.0"),
+		.package(url: "https://github.com/tannerdsilva/no-webui.git", "2.0.0"..<"3.0.0"),
 	],
 	targets: [
 		.executableTarget(
@@ -51,6 +52,12 @@ let package = Package(
 				.product(name:"concord", package:"QuickLMDB"),
 				
 				.product(name:"NIO", package:"swift-nio"),
+				.product(name:"NIOPosix", package:"swift-nio", condition: .when(platforms: [.macOS])),
+				.product(name:"NIOHTTP1", package:"swift-nio", condition: .when(platforms: [.macOS])),
+				.product(name:"NIOWebSocket", package:"swift-nio", condition: .when(platforms: [.macOS])),
+				.product(name:"WebUI", package:"no-webui", condition: .when(platforms: [.macOS])),
+				.product(name:"WebUIDesignSystem", package:"no-webui", condition: .when(platforms: [.macOS])),
+				.product(name:"WebUIServer", package:"no-webui", condition: .when(platforms: [.macOS])),
 				.product(name:"ServiceLifecycle", package:"swift-service-lifecycle"),
 				.product(name:"ArgumentParser", package:"swift-argument-parser"),
 				.product(name:"wireguard-userspace-nio", package:"wireguard-swift"),

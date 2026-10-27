@@ -1,5 +1,5 @@
 {
-  "originHash" : "8110c1d3e34c8d9d39ae6d9be3a224e295c686fad422f8d9fd09eb29746e3185",
+  "originHash" : "a0aad5cec89f7a634d1bf1de3dbaf50cdd796fa91927b51880ad44a2c48f67b1",
   "pins" : [
     {
       "identity" : "bedrock",
@@ -17,6 +17,15 @@
       "state" : {
         "revision" : "653e73e2fc1b48cec661c740510cabfb53af723d",
         "version" : "1.0.2"
+      }
+    },
+    {
+      "identity" : "no-webui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tannerdsilva/no-webui.git",
+      "state" : {
+        "revision" : "0886e7bce33d5ca3010cf2fcdc8f6761a3458f07",
+        "version" : "2.1.0"
       }
     },
     {
